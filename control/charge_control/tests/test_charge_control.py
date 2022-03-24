@@ -25,6 +25,10 @@ class Tester:
     def update(self, solar, house, wallbox) -> Controls:
         return self._charge_control.update(Measurements(solar, house, wallbox))
 
+    def assert_battery_max_charge(self, solar, house, wallbox, expected):
+        c = self.update(solar, house, wallbox)
+        assert c.battery_max_charge == expected
+
 
 @pytest.fixture
 def t(charge_control: ChargeControl) -> Tester:
@@ -47,3 +51,18 @@ def test_update_wallbox_current(t):
         c = t.update(solar, house, wallbox_power)
         assert c.wallbox_current == wallbox_current - 1
         assert c.battery_max_discharge == t.config.battery_max_discharge
+
+
+def test_update_grid_max(t):
+    t.assert_battery_max_charge(t.config.grid_max, 0, 0, 0)
+    t.assert_battery_max_charge(t.config.grid_max + 1, 0, 0, t.config.battery_min_dis_charge)
+    t.assert_battery_max_charge(t.config.grid_max + t.config.battery_min_dis_charge, 0, 0, t.config.battery_min_dis_charge)
+    t.assert_battery_max_charge(t.config.grid_max + t.config.battery_max_charge, 0, 0, t.config.battery_max_charge)
+    t.assert_battery_max_charge(t.config.grid_max + t.config.battery_max_charge + 1, 0, 0, t.config.battery_max_charge)
+
+    battery_charge = (t.config.battery_max_charge + t.config.battery_min_dis_charge) // 2
+    solar = t.config.grid_max + battery_charge
+    t.assert_battery_max_charge(solar + 0, 0, 0, battery_charge)
+    t.assert_battery_max_charge(solar + 1, 1, 0, battery_charge)
+    t.assert_battery_max_charge(solar + 1, 0, 1, battery_charge)
+    t.assert_battery_max_charge(solar + 2, 1, 1, battery_charge)

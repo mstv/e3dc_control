@@ -1,4 +1,5 @@
 from data import Config, Controls, Measurements
+from .charge_sm import ChargeSM
 
 
 def _lookup(max_power: int, power_by_current: dict) -> int:
@@ -10,17 +11,17 @@ def _lookup(max_power: int, power_by_current: dict) -> int:
 
 class ChargeControl:
     def __init__(self, config: Config):
-        self._config = config
+        self._charge_sm = ChargeSM(config)
 
     @property
     def config(self) -> Config:
-        return self._config
+        return self._charge_sm.config
 
     def update(self, measurements: Measurements) -> Controls:
         controls = Controls(
             wallbox_current=self._get_wallbox_current(measurements),
             battery_max_discharge=self.config.battery_max_discharge,
-            battery_max_charge=None)
+            battery_max_charge=self._charge_sm.update(measurements))
         return controls
 
     def _get_wallbox_current(self, measurements: Measurements) -> int:
