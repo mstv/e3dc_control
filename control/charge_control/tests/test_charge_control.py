@@ -23,7 +23,9 @@ class Tester:
         return self._charge_control.config
 
     def update(self, solar, house, wallbox) -> Controls:
-        return self._charge_control.update(Measurements(solar, house, wallbox))
+        soc = 0
+        utc = 0.0
+        return self._charge_control.update(Measurements(solar, house, wallbox, soc, utc))
 
     def assert_battery_max_charge(self, solar, house, wallbox, expected):
         c = self.update(solar, house, wallbox)

@@ -3,6 +3,7 @@ from data import Config
 
 def _get() -> Config:
     config = Config(
+        solar_peak_utc = 10.5,  # 11:30 CET
         variation_margin = 300,
         wallbox_power_by_current =
         {
@@ -19,6 +20,7 @@ def _get() -> Config:
         battery_max_discharge = 4500,
         battery_max_charge = 4500,
         battery_min_dis_charge = 65,
+        battery_watthours = 9830,
         solar_max = 11400,
         grid_max = None)
     config.grid_max = config.solar_max * 70 // 100
