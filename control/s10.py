@@ -1,5 +1,6 @@
 from array import array
 from charge_control import ChargeControl, CONFIG
+from tools import MovingAverage
 from data import Controls, ControlState, Info, Measurements
 from datetime import datetime
 from e3dc import E3DC
@@ -24,6 +25,7 @@ class S10:
                           password=E3DC_Config.PASSWORD,
                           ipAddress=E3DC_Config.IP,
                           key=E3DC_Config.SECRET)
+        self._ma_measurements = MovingAverage(4)
         # previous control state for change detection
         self._controls = None
         self._idle_active = None
@@ -38,7 +40,12 @@ class S10:
                                     house=data['consumption']['house'],
                                     wallbox=data['consumption']['wallbox'],
                                     soc=data['stateOfCharge'],
-                                    utc=dt_utc.hour + dt_utc.minute / 60 + dt_utc.second / 3600)
+                                    utc=0)
+
+        self._ma_measurements.add(measurements)
+        measurements = self._ma_measurements.get()
+        measurements.utc = dt_utc.hour + dt_utc.minute / 60 + dt_utc.second / 3600  # do not average time
+
         info = Info(dt_utc,
                     measurements,
                     solar_delta=int(solar_data[0]['power'] - solar_data[1]['power']),
