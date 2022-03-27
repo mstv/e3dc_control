@@ -17,6 +17,9 @@ def _get() -> Config:
              9:  4850,
              8:  2000
         },
+        default_idle_charge_active = True,
+        default_idle_charge_end = [10, 30],  # local time
+        default_battery_max_charge = 1700,
         battery_max_discharge = 4500,
         battery_max_charge = 4500,
         battery_min_dis_charge = 65,
