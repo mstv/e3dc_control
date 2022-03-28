@@ -31,26 +31,41 @@ class S10:
         self._idle_active = None
         self._idle_end = None
 
+    def send(self, request: str, data: array) -> object:
+        return self._e3dc.sendRequest((request, "Container", data), keepAlive=True)
+
+    def get(self, tag) -> object:
+        return self._e3dc.sendRequestTag(tag, keepAlive=True)
+
+    def get_solar_power(self, pvi_index: int, pv_string_index: int) -> float:
+        power = self.send("PVI_REQ_DATA",
+                          [
+                              ("PVI_INDEX", "Uint16", pvi_index),
+                              ("PVI_REQ_DC_POWER", "Uint16", pv_string_index),
+                          ])
+        return power[2][1][2][1][2]
+
     def get_info(self) -> Info:
-        data = self._e3dc.poll(keepAlive=True)
-        pvi_data = self._e3dc.get_pvi_data(keepAlive=True)
-        solar_data = pvi_data['strings']
-        dt_utc = data['time']
-        measurements = Measurements(solar=data['production']['solar'],
-                                    house=data['consumption']['house'],
-                                    wallbox=data['consumption']['wallbox'],
-                                    soc=data['stateOfCharge'],
+        utime = self.get("INFO_REQ_UTC_TIME")
+        measurements = Measurements(solar=self.get('EMS_REQ_POWER_PV'),
+                                    house=self.get('EMS_REQ_POWER_HOME'),
+                                    wallbox=self.get('EMS_REQ_POWER_WB_ALL'),
+                                    soc=self.get('EMS_REQ_BAT_SOC'),
                                     utc=0)
+        batt = self.get('EMS_REQ_POWER_BAT')
+        grid = self.get('EMS_REQ_POWER_GRID')
+        solar_delta = int(self.get_solar_power(0, 0)
+                          - self.get_solar_power(0, 1))
 
         self._ma_measurements.add(measurements)
         measurements = self._ma_measurements.get()
-        measurements.utc = dt_utc.hour + dt_utc.minute / 60 + dt_utc.second / 3600  # do not average time
+        measurements.utc = utime / 3600 % 24  # do not average time
 
-        info = Info(dt_utc,
-                    measurements,
-                    solar_delta=int(solar_data[0]['power'] - solar_data[1]['power']),
-                    batt=data['consumption']['battery'],
-                    grid=data['production']['grid'],
+        info = Info(dt_utc=datetime.utcfromtimestamp(utime),
+                    measurements=measurements,
+                    solar_delta=solar_delta,
+                    batt=batt,
+                    grid=grid,
                     controls=None,
                     control_state=ControlState.NotUpdated)
         return info
@@ -139,7 +154,7 @@ class S10:
             return
         idle = info.controls.battery_max_charge == 0
         max_charge = CONFIG.battery_max_charge if idle else info.controls.battery_max_charge
-        self.set_idle(idle)
+        self.set_charge_idle(idle)
         self._e3dc.set_power_limits(enable=True,
                                     max_charge=max_charge,
                                     max_discharge=info.controls.battery_max_discharge,
@@ -147,77 +162,50 @@ class S10:
                                     keepAlive=True)
 
     def teardown(self):
-        self.set_idle(CONFIG.default_idle_charge_active,
-                      CONFIG.default_idle_charge_end)
+        self.set_charge_idle(CONFIG.default_idle_charge_active,
+                             CONFIG.default_idle_charge_end)
         self._e3dc.set_power_limits(enable=True,
                                     max_charge=CONFIG.default_battery_max_charge,
                                     max_discharge=CONFIG.battery_max_discharge,
                                     discharge_start=CONFIG.battery_min_dis_charge,
                                     keepAlive=False)
 
-    def set_idle(self, active: bool, end: array = [23, 59]) -> bool:
+    def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:
-            return False
-        self._idle_active = active
-        self._idle_end = end
+            return None
         try:
             print(f"SETTING IDLE = {active} {end}")
         except:
             pass  # ignore exceptions on exception exit
-        start = [0, 0]
-        d_end = [0, 1]
-        idle_periods = \
-            {
-                "idleCharge":
-                [
-                    {
-                        "day": 0, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 1, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 2, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 3, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 4, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 5, "start": start, "end": end, "active": active
-                    },
-                    {
-                        "day": 6, "start": start, "end": end, "active": active
-                    }
-                ],
-                "idleDischarge":
-                [
-                    {
-                        "day": 0, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 1, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 2, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 3, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 4, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 5, "start": start, "end": d_end, "active": False
-                    },
-                    {
-                        "day": 6, "start": start, "end": d_end, "active": False
-                    }
-                ]
-            }
-        self._e3dc.set_idle_periods(idle_periods, keepAlive=True)
+        periods = []
+        for day in range(7):
+            data = [
+                ("EMS_IDLE_PERIOD_TYPE", "UChar8", 0),  # charge
+                ("EMS_IDLE_PERIOD_DAY", "UChar8", day),
+                ("EMS_IDLE_PERIOD_ACTIVE", "Bool", active),
+                (
+                    "EMS_IDLE_PERIOD_START",
+                    "Container",
+                    [
+                        ("EMS_IDLE_PERIOD_HOUR", "UChar8", 0),
+                        ("EMS_IDLE_PERIOD_MINUTE", "UChar8", 0)
+                    ]
+                ),
+                (
+                    "EMS_IDLE_PERIOD_END",
+                    "Container",
+                    [
+                        ("EMS_IDLE_PERIOD_HOUR", "UChar8", end[0]),
+                        ("EMS_IDLE_PERIOD_MINUTE", "UChar8", end[1])
+                    ]
+                )
+            ]
+            periods.append(("EMS_IDLE_PERIOD", "Container", data))
+        result = self.send("EMS_REQ_SET_IDLE_PERIODS", periods)
+        if result[0] != "EMS_SET_IDLE_PERIODS" or result[2] != 1:
+            return False
+        self._idle_active = active
+        self._idle_end = end
         return True
 
 
