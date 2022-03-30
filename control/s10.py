@@ -135,8 +135,26 @@ class S10:
         # print(readable(pmData))
         # print(readable(pmsData))
 
+        wb = self.get_wb()[2]
+        for p in wb[1:]:
+            print(p)
+
         if verbose:
             print(solar_data)
+
+    def get_wb(self, wb_index: int = 0) -> object:
+        return self.send("WB_REQ_DATA",
+                         [
+                             ("WB_INDEX", "UChar8", wb_index),
+                             ("WB_REQ_ENERGY_ALL", "None", None),
+                             ("WB_REQ_ENERGY_SOLAR", "None", None),
+                             ("WB_REQ_SOC", "None", None),
+                             ("WB_REQ_EXTERN_DATA_ALG", "None", None),
+                             ("WB_REQ_EXTERN_DATA_SUN", "None", None),
+                             ("WB_REQ_EXTERN_DATA_NET", "None", None),
+                             ("WB_REQ_PARAM_1", "None", None),
+                             ("WB_REQ_APP_SOFTWARE", "None", None)
+                         ])
 
     def update(self, dry_run: bool):
         info = self.get_info()
@@ -160,6 +178,7 @@ class S10:
                                     max_discharge=info.controls.battery_max_discharge,
                                     discharge_start=CONFIG.battery_min_dis_charge,
                                     keepAlive=True)
+        self.set_wallbox_current(info.controls.wallbox_current)
 
     def teardown(self):
         self.set_charge_idle(CONFIG.default_idle_charge_active,
@@ -169,6 +188,7 @@ class S10:
                                     max_discharge=CONFIG.battery_max_discharge,
                                     discharge_start=CONFIG.battery_min_dis_charge,
                                     keepAlive=False)
+        self.set_wallbox_current(max(CONFIG.wallbox_power_by_current.keys()))
 
     def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:
@@ -207,6 +227,27 @@ class S10:
         self._idle_active = active
         self._idle_end = end
         return True
+
+    def set_wallbox_current(self, max_current):
+        if max_current == 0:
+            self.set_wallbox_max_current(0, max_current)
+        else:
+            self.set_wallbox_max_current(0, max_current)
+
+    def set_wallbox_max_current(self, wb_index: int, max_current: int):
+        _ = self.send_wallbox_request(wb_index,
+                                      bytearray([0, 0, max_current, 0, 0, 0]))
+
+    def send_wallbox_request(self, wb_index: int, extern_data: bytearray) -> object:
+        param_1 = [
+            ("WB_EXTERN_DATA", "ByteArray", extern_data),
+            ("WB_EXTERN_DATA_LEN", "UChar8", len(extern_data))
+        ]
+        return self.send("WB_REQ_DATA",
+                         [
+                             ("WB_INDEX", "UChar8", wb_index),
+                             ("WB_REQ_SET_PARAM_1", "Container", param_1)
+                         ])
 
 
 # functions
