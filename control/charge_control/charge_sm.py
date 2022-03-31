@@ -5,35 +5,29 @@ class ChargeSM:
     def __init__(self, config: Config):
         self._config = config
         self._update_solar_parabola(utc=None, solar=0)
-        self._init_max_charge()
 
     @property
     def config(self) -> Config:
         return self._config
 
-    def _init_max_charge(self):
-        self._max_charge = 0
-
-    def _apply_charge(self, charge: int):
-        if charge <= 0:
-            return
-        charge = max(charge, self.config.battery_min_dis_charge)
-        charge = min(charge, self.config.battery_max_charge)
-        if self._max_charge < charge:
-            self._max_charge = charge
-
-    def update(self, measurements: Measurements) -> int:
+    def update(self, measurements: Measurements, variation_margin: int) -> int:
         self._update_solar_parabola(measurements.utc, measurements.solar)
 
-        self._init_max_charge()
-        self._apply_charge(self._get_grid_denied(measurements))
-        self._apply_charge(self._get_charge_by_solar_parabola
-                           (self._get_max_grid_denied_watthours(measurements.utc),
-                            self._get_max_charge_watthours(measurements.soc)))
-        return self._max_charge
+        max_charge = 0
+        max_charge = max(max_charge,
+                         self._get_grid_denied(measurements,
+                                               variation_margin))
+        max_charge = max(max_charge,
+                         self._get_charge_by_solar_parabola
+                         (self._get_max_grid_denied_watthours(measurements.utc),
+                          self._get_max_charge_watthours(measurements.soc)))
+        return max_charge
 
-    def _get_grid_denied(self, measurements: Measurements):
-        excess = measurements.solar - measurements.house - measurements.wallbox
+    def _get_grid_denied(self, measurements: Measurements, variation_margin):
+        excess = measurements.solar \
+            - measurements.house \
+            - measurements.wallbox \
+            + variation_margin  # rather route too much to battery now, it can be discarded later
         grid_denied = excess - self.config.grid_max
         return grid_denied
 

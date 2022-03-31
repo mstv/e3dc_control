@@ -160,7 +160,9 @@ class S10:
         info = self.get_info()
 
         # calculate
-        info.controls = self._control.update(info.measurements)
+        info.controls = self._control.update(info.measurements,
+                                             self._control.config.variation_margin)
+        info.controls = self._control.limit(info.controls)
         info.control_state = ControlState.Unchanged if self._controls == info.controls else ControlState.Changed
         self._controls = info.controls
 
