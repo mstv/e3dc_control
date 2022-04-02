@@ -19,5 +19,11 @@ class Info:
     solar_delta: int
     batt: int
     grid: int
+    car_connected: bool
+    car_may_charge: bool
+    car_charging: bool
+    car_soc: int
+    car_total: int
+    car_grid: int
     controls: Controls
     control_state: ControlState

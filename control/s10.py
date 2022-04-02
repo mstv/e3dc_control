@@ -61,11 +61,22 @@ class S10:
         measurements = self._ma_measurements.get()
         measurements.utc = utime / 3600 % 24  # do not average time
 
+        wb = self.get_wb_info()
+        wb_status = wb['status']
+        wb_solar = wb['solar']
+        car_connected = wb_status['plugged'] and wb_status['locked']
+        car_may_charge = not wb_status['canceled'] and car_connected
         info = Info(dt_utc=datetime.utcfromtimestamp(utime),
                     measurements=measurements,
                     solar_delta=solar_delta,
                     batt=batt,
                     grid=grid,
+                    car_connected=car_connected,
+                    car_may_charge=car_may_charge,
+                    car_charging=wb_status['charging'],
+                    car_soc=wb_solar[2],
+                    car_total=wb_solar[5],
+                    car_grid=wb['grid'][0],
                     controls=None,
                     control_state=ControlState.NotUpdated)
         return info
@@ -135,9 +146,8 @@ class S10:
         # print(readable(pmData))
         # print(readable(pmsData))
 
-        wb = self.get_wb()[2]
-        for p in wb[1:]:
-            print(p)
+        for p, v in self.get_wb_info().items():
+            print(p, v)
 
         if verbose:
             print(solar_data)
@@ -146,15 +156,62 @@ class S10:
         return self.send("WB_REQ_DATA",
                          [
                              ("WB_INDEX", "UChar8", wb_index),
-                             ("WB_REQ_ENERGY_ALL", "None", None),
-                             ("WB_REQ_ENERGY_SOLAR", "None", None),
-                             ("WB_REQ_SOC", "None", None),
                              ("WB_REQ_EXTERN_DATA_ALG", "None", None),
                              ("WB_REQ_EXTERN_DATA_SUN", "None", None),
                              ("WB_REQ_EXTERN_DATA_NET", "None", None),
-                             ("WB_REQ_PARAM_1", "None", None),
-                             ("WB_REQ_APP_SOFTWARE", "None", None)
+                             ("WB_REQ_KEY_STATE", "None", None),
+                             # ("WB_REQ_GET_KEY_LOCK_MODE", "None", None),
+                             # ("WB_REQ_PARAM_1", "None", None),
+                             # ("WB_REQ_ENERGY_ALL", "None", None),
+                             # ("WB_REQ_ENERGY_SOLAR", "None", None),
+                             # ("WB_REQ_SOC", "None", None),
+                             # ("WB_REQ_APP_SOFTWARE", "None", None),
                          ])
+
+    def get_wb_info(self, wb_index: int = 0) -> object:
+        response = self.get_wb(wb_index)[2][1:]
+        alg = response[0][2][1][2]
+        sun = response[1][2][1][2]
+        net = response[2][2][1][2]
+        key = response[3][2]
+        sun_w0_power = (int(sun[1]) << 8) | int(sun[0])
+        sun_w12_total = (int(sun[5]) << 24) | (int(sun[4]) << 16) \
+            | (int(sun[3]) << 8) | int(sun[2])
+        sun_w3_soc = (int(sun[7]) << 8) | int(sun[6])
+        net_w0_power = (int(net[1]) << 8) | int(net[0])
+        net_w12_total = (int(net[5]) << 24) | (int(net[4]) << 16) \
+            | (int(net[3]) << 8) | int(net[2])
+        net_w3 = (int(net[7]) << 8) | int(net[6])
+        alg0_soc = alg[0]
+        alg1_phases = alg[1]
+        alg2_status = alg[2]
+        alg3_max = alg[3]
+        alg5_schuko = alg[5]
+        status = {
+            'sun mode': (alg2_status & 128) != 0,
+            'canceled': (alg2_status & 64) != 0,
+            'charging': (alg2_status & 32) != 0,
+            'locked': (alg2_status & 16) != 0,
+            'plugged': (alg2_status & 8) != 0,
+            'max A': alg3_max,
+            'key': key,
+        }
+        info = {
+            'solar': [sun_w12_total, sun_w0_power, sun_w3_soc, '% of 10kWh',
+                      'total', sun_w12_total + net_w12_total],
+            'grid': [net_w12_total, net_w0_power, net_w3],
+            'status': status,
+        }
+        others = (alg2_status & 7, alg[4], alg[6], alg[7])
+        if others != (0, 0, 0, 0):
+            status['alg[o467]'] = others
+        if alg1_phases != 3:
+            status['phases'] = alg1_phases
+        if alg5_schuko != 0:
+            status['schuko'] = alg5_schuko
+        if alg0_soc != sun_w3_soc:
+            info['solar'][3] += f" but {alg0_soc} in ALG[0]!"
+        return info
 
     def update(self, dry_run: bool):
         info = self.get_info()
@@ -295,9 +352,19 @@ def main(argv):
     wait = 2
 
     try:
-        opts, _ = getopt.getopt(argv, "vdn:w:it:", ["verbose", "dry-run", "num-loops=", "wait=", "info", "tag="])
+        opts, _ = getopt.getopt(argv, "vdn:w:it:",
+                                ["verbose",
+                                 "dry-run",
+                                 "num-loops=",
+                                 "wait=",
+                                 "info",
+                                 "tag=",
+                                 "wb="])
     except getopt.GetoptError:
-        print('main.py [--verbose] [--dry-run] [--num-loops=n] [--wait=seconds] | [--info] | [--tag=TAG]')
+        print('main.py [--verbose] [--dry-run] [--num-loops=n] [--wait=seconds]',
+              '| [--info]',
+              '| [--tag=TAG]',
+              '| [--wb=index:value]')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ('-v', '--verbose'):
@@ -312,6 +379,17 @@ def main(argv):
             def loop_action(s10): print_info(s10, verbose)
         if opt in ('-t', '--tag'):
             def loop_action(s10): send_request(s10, tag=arg)
+            if num_loops is None:
+                num_loops = 1
+        if opt == '--wb':
+            def loop_action(s10):
+                data = arg.split(':')
+                print(S10.send_wallbox_request(
+                    s10, 0, int(data[0]), int(data[1])))
+                for p in S10.get_wb(s10)[2][1:]:
+                    print(p)
+                for p, v in S10.get_wb_info(s10).items():
+                    print(p, v)
             if num_loops is None:
                 num_loops = 1
 
