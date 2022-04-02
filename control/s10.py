@@ -1,5 +1,5 @@
 from array import array
-from charge_control import ChargeControl, CONFIG
+from charge_control import ChargeControl, ControlsSM, CONFIG
 from tools import MovingAverage
 from data import Controls, ControlState, Info, Measurements
 from datetime import datetime
@@ -20,6 +20,7 @@ from e3dc_config import E3DC_Config
 class S10:
     def __init__(self):
         self._control = ChargeControl(CONFIG)
+        self._controls_sm = ControlsSM()
         self._e3dc = E3DC(E3DC.CONNECT_LOCAL,
                           username=E3DC_Config.USERNAME,
                           password=E3DC_Config.PASSWORD,
@@ -27,7 +28,6 @@ class S10:
                           key=E3DC_Config.SECRET)
         self._ma_measurements = MovingAverage(4)
         # previous control state for change detection
-        self._controls = None
         self._idle_active = None
         self._idle_end = None
 
@@ -160,27 +160,44 @@ class S10:
         info = self.get_info()
 
         # calculate
-        info.controls = self._control.update(info.measurements,
-                                             self._control.config.variation_margin)
+        controls_0 = self._control.update(info.measurements,
+                                          variation_margin=0)
+        controls_var = self._control.update(info.measurements,
+                                            self._control.config.variation_margin)
+        info.controls, changed = self._controls_sm.update(controls_0,
+                                                          controls_var)
+        any_changed = changed.wallbox_current \
+            or changed.battery_max_discharge \
+            or changed.battery_max_charge
+        info.control_state = ControlState.Changed if any_changed else ControlState.Unchanged
         info.controls = self._control.limit(info.controls)
-        info.control_state = ControlState.Unchanged if self._controls == info.controls else ControlState.Changed
-        self._controls = info.controls
 
         # print
+        # print("chg:", changed, "->", any_changed)
+        # print("ctr:", info.controls)
         print(one_line(info))
 
         # set
         if dry_run:
             return
-        idle = info.controls.battery_max_charge == 0
-        max_charge = CONFIG.battery_max_charge if idle else info.controls.battery_max_charge
-        self.set_charge_idle(idle)
-        self._e3dc.set_power_limits(enable=True,
-                                    max_charge=max_charge,
-                                    max_discharge=info.controls.battery_max_discharge,
-                                    discharge_start=CONFIG.battery_min_dis_charge,
-                                    keepAlive=True)
-        self.set_wallbox_current(info.controls.wallbox_current)
+        if changed.battery_max_charge or changed.battery_max_discharge:
+            assert info.controls.battery_max_discharge == CONFIG.battery_max_discharge
+            if info.controls.battery_max_charge == 0:
+                self.set_charge_idle(True)
+            else:
+                self._e3dc.set_power_limits(enable=True,
+                                            max_charge=info.controls.battery_max_charge,
+                                            max_discharge=info.controls.battery_max_discharge,
+                                            discharge_start=CONFIG.battery_min_dis_charge,
+                                            keepAlive=True)
+                self.set_charge_idle(False)
+        if changed.wallbox_current:
+            if info.controls.wallbox_current == 0:
+                self.enable_wallbox(0, False)
+            else:
+                self.set_wallbox_max_current(0, info.controls.wallbox_current)
+                time.sleep(3.0)  # avoid misleading peak in house consumption
+                self.enable_wallbox(0, True)
 
     def teardown(self):
         self.set_charge_idle(CONFIG.default_idle_charge_active,
@@ -190,7 +207,8 @@ class S10:
                                     max_discharge=CONFIG.battery_max_discharge,
                                     discharge_start=CONFIG.battery_min_dis_charge,
                                     keepAlive=False)
-        self.set_wallbox_current(max(CONFIG.wallbox_power_by_current.keys()))
+        self.set_wallbox_max_current(0,
+                                     max(CONFIG.wallbox_power_by_current.keys()))
 
     def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:
@@ -230,17 +248,15 @@ class S10:
         self._idle_end = end
         return True
 
-    def set_wallbox_current(self, max_current):
-        if max_current == 0:
-            self.set_wallbox_max_current(0, max_current)
-        else:
-            self.set_wallbox_max_current(0, max_current)
+    def enable_wallbox(self, wb_index: int, enable: bool):
+        pass  # does not work: _ = self.send_wallbox_request(wb_index, 4, 1)
 
     def set_wallbox_max_current(self, wb_index: int, max_current: int):
-        _ = self.send_wallbox_request(wb_index,
-                                      bytearray([0, 0, max_current, 0, 0, 0]))
+        _ = self.send_wallbox_request(wb_index, 2, max_current)
 
-    def send_wallbox_request(self, wb_index: int, extern_data: bytearray) -> object:
+    def send_wallbox_request(self, wb_index: int, data_index: int, value: int) -> object:
+        extern_data = bytearray([0, 0, 0, 0, 0, 0])
+        extern_data[data_index] = value
         param_1 = [
             ("WB_EXTERN_DATA", "ByteArray", extern_data),
             ("WB_EXTERN_DATA_LEN", "UChar8", len(extern_data))
