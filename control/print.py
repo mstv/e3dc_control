@@ -19,7 +19,9 @@ def one_line(info: Info) -> str:
         + f" {'>' if info.car_soc == 100 else ' '}{0.1 * info.car_soc:4.1f}" \
         + f" {(0.001 * info.car_total):6.3f}{0.001 * (-info.car_grid):6.2f} kWh " \
         + f" {info.controls.battery_max_discharge:4}<b<{info.controls.battery_max_charge:<4}" \
-        + f" {info.control_state.value}"
+        + f" {info.control_state.value}" \
+        + f" {(0.001 * info.max_solar):4.1f}" \
+        + f" {info.averaged.solar} {info.averaged.house} {info.averaged.wallbox}"
 
 
 def readable(jsonData) -> str:

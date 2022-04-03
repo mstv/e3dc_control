@@ -51,15 +51,15 @@ class S10:
                                     house=self.get('EMS_REQ_POWER_HOME'),
                                     wallbox=self.get('EMS_REQ_POWER_WB_ALL'),
                                     soc=self.get('EMS_REQ_BAT_SOC'),
-                                    utc=0)
+                                    utc=utime / 3600 % 24)
         batt = self.get('EMS_REQ_POWER_BAT')
         grid = self.get('EMS_REQ_POWER_GRID')
         solar_delta = int(self.get_solar_power(0, 0)
                           - self.get_solar_power(0, 1))
 
         self._ma_measurements.add(measurements)
-        measurements = self._ma_measurements.get()
-        measurements.utc = utime / 3600 % 24  # do not average time
+        averaged = self._ma_measurements.get()
+        averaged.utc = measurements.utc  # do not average time
 
         wb = self.get_wb_info()
         wb_status = wb['status']
@@ -68,6 +68,8 @@ class S10:
         car_may_charge = not wb_status['canceled'] and car_connected
         info = Info(dt_utc=datetime.utcfromtimestamp(utime),
                     measurements=measurements,
+                    averaged=averaged,
+                    max_solar=self._control._charge_sm._max_solar,
                     solar_delta=solar_delta,
                     batt=batt,
                     grid=grid,
@@ -217,9 +219,9 @@ class S10:
         info = self.get_info()
 
         # calculate
-        controls_0 = self._control.update(info.measurements,
+        controls_0 = self._control.update(info.averaged,
                                           variation_margin=0)
-        controls_var = self._control.update(info.measurements,
+        controls_var = self._control.update(info.averaged,
                                             self._control.config.variation_margin)
         info.controls, changed = self._controls_sm.update(controls_0,
                                                           controls_var)

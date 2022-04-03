@@ -16,6 +16,8 @@ class ControlState(Enum):
 class Info:
     dt_utc: datetime
     measurements: Measurements
+    averaged: Measurements
+    max_solar: int
     solar_delta: int
     batt: int
     grid: int
