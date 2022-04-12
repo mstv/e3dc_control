@@ -25,6 +25,7 @@ class ChargeSM:
         return max_charge
 
     def _get_grid_denied(self, measurements: Measurements, variation_margin):
+        variation_margin += self.config.additional_solar_variation_margin
         excess = measurements.solar \
             - measurements.house \
             - measurements.wallbox \

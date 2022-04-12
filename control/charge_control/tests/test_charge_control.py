@@ -99,21 +99,22 @@ def test_update_wallbox_current(t):
 
 
 def test_update_grid_max(t):
+    limit = t.config.grid_max - t.config.additional_solar_variation_margin
     t.assert_battery_max_charge(0, 0, 0, 0, 0)
-    t.assert_battery_max_charge(t.config.grid_max - 1, 0, 0, 0, 0)
-    t.assert_battery_max_charge(t.config.grid_max, 0, 0, 0, 0)
+    t.assert_battery_max_charge(limit - 1, 0, 0, 0, 0)
+    t.assert_battery_max_charge(limit, 0, 0, 0, 0)
     t.assert_battery_max_charge(
-        t.config.grid_max + 1, 0, 0, 0, 1)
+        limit + 1, 0, 0, 0, 1)
     t.assert_battery_max_charge(
-        t.config.grid_max + t.config.battery_min_charge, 0, 0, 0, t.config.battery_min_charge)
+        limit + t.config.battery_min_charge, 0, 0, 0, t.config.battery_min_charge)
     t.assert_battery_max_charge(
-        t.config.grid_max + t.config.battery_max_charge, 0, 0, 0, t.config.battery_max_charge)
+        limit + t.config.battery_max_charge, 0, 0, 0, t.config.battery_max_charge)
     t.assert_battery_max_charge(
-        t.config.grid_max + t.config.battery_max_charge + 1, 0, 0, 0, t.config.battery_max_charge + 1)
+        limit + t.config.battery_max_charge + 1, 0, 0, 0, t.config.battery_max_charge + 1)
 
     battery_charge = (t.config.battery_max_charge +
                       t.config.battery_min_charge) // 2
-    solar = t.config.grid_max + battery_charge
+    solar = limit + battery_charge
     t.assert_battery_max_charge(solar + 0, 0, 0, 0, battery_charge)
     t.assert_battery_max_charge(solar + 1, 1, 0, 0, battery_charge)
     t.assert_battery_max_charge(solar + 1, 0, 1, 0, battery_charge)
