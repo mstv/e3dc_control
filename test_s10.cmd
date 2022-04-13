@@ -9,6 +9,8 @@ set LOG=%TEMP%\test_s10.err
 %S10% --tag=EMS_REQ_POWER_PV 2>> %LOG%
 %S10% -tEMS_REQ_POWER_PV 2>> %LOG%
 %S10% --wb=5:0 2>> %LOG%
+%S10% --wb=5:0:ext 2>> %LOG%
+%S10% --wb=5:0:0 2>> %LOG%
 
 type %LOG%
 

@@ -223,6 +223,10 @@ class S10:
                                           variation_margin=0)
         controls_var = self._control.update(info.averaged,
                                             self._control.config.variation_margin)
+        if not info.car_connected:
+            controls_0.wallbox_current \
+                = controls_var.wallbox_current \
+                = 0
         info.controls, changed = self._controls_sm.update(controls_0,
                                                           controls_var)
         any_changed = changed.wallbox_current \
@@ -250,13 +254,15 @@ class S10:
                                             discharge_start=CONFIG.battery_min_dis_charge,
                                             keepAlive=True)
                 self.set_charge_idle(False)
-        if changed.wallbox_current:
-            if info.controls.wallbox_current == 0:
-                self.enable_wallbox(0, False)
-            else:
+        may_charge = info.controls.wallbox_current > 0
+        if changed.wallbox_current or (info.car_may_charge and not may_charge):
+            if may_charge:
                 self.set_wallbox_max_current(0, info.controls.wallbox_current)
                 time.sleep(3.0)  # avoid misleading peak in house consumption
-                self.enable_wallbox(0, True)
+            if info.car_may_charge != may_charge:
+                print(
+                    f"toggle_wallbox_charging {info.car_may_charge} -> {may_charge}")
+                self.toggle_wallbox_charging()
 
     def teardown(self):
         self.set_charge_idle(CONFIG.default_idle_charge_active,
@@ -307,13 +313,17 @@ class S10:
         self._idle_end = end
         return True
 
-    def enable_wallbox(self, wb_index: int, enable: bool):
-        pass  # does not work: _ = self.send_wallbox_request(wb_index, 4, 1)
+    def toggle_wallbox_charging(self, wb_index: int = 0):
+        _ = self.send_wallbox_request(wb_index, 4, 1)
 
     def set_wallbox_max_current(self, wb_index: int, max_current: int):
-        _ = self.send_wallbox_request(wb_index, 2, max_current)
+        _ = self.send_wallbox_request(wb_index,
+                                      data_index=2,
+                                      value=max_current,
+                                      set_extern=False)
 
-    def send_wallbox_request(self, wb_index: int, data_index: int, value: int) -> object:
+    def send_wallbox_request(self, wb_index: int, data_index: int, value: int, set_extern: bool = True) -> object:
+        request = "WB_REQ_SET_EXTERN" if set_extern else "WB_REQ_SET_PARAM_1"
         extern_data = bytearray([0, 0, 0, 0, 0, 0])
         extern_data[data_index] = value
         param_1 = [
@@ -323,7 +333,7 @@ class S10:
         return self.send("WB_REQ_DATA",
                          [
                              ("WB_INDEX", "UChar8", wb_index),
-                             ("WB_REQ_SET_PARAM_1", "Container", param_1)
+                             (request, "Container", param_1)
                          ])
 
 
@@ -366,7 +376,7 @@ def main(argv):
         print('main.py [--verbose] [--dry-run] [--num-loops=n] [--wait=seconds]',
               '| [--info]',
               '| [--tag=TAG]',
-              '| [--wb=index:value]')
+              '| [--wb=index:value[:extern]]')
         sys.exit(2)
     for opt, arg in opts:
         if opt in ('-v', '--verbose'):
@@ -386,8 +396,13 @@ def main(argv):
         if opt == '--wb':
             def loop_action(s10):
                 data = arg.split(':')
+                set_extern = True if len(data) < 3 else data[2] != '0'
                 print(S10.send_wallbox_request(
-                    s10, 0, int(data[0]), int(data[1])))
+                    s10,
+                    0,
+                    int(data[0]),
+                    int(data[1]),
+                    set_extern))
                 for p in S10.get_wb(s10)[2][1:]:
                     print(p)
                 for p, v in S10.get_wb_info(s10).items():
