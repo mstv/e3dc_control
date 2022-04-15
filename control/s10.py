@@ -1,7 +1,7 @@
 from array import array
 from charge_control import ChargeControl, ControlsSM, CONFIG
 from tools import MovingAverage
-from data import Controls, ControlState, Info, Measurements
+from data import Config, Controls, ControlState, Info, Measurements
 from datetime import datetime
 from e3dc import E3DC
 import getopt
@@ -18,8 +18,8 @@ from e3dc_config import E3DC_Config
 
 
 class S10:
-    def __init__(self):
-        self._control = ChargeControl(CONFIG)
+    def __init__(self, config: Config):
+        self._control = ChargeControl(config)
         self._controls_sm = ControlsSM()
         self._e3dc = E3DC(E3DC.CONNECT_LOCAL,
                           username=E3DC_Config.USERNAME,
@@ -30,6 +30,10 @@ class S10:
         # previous control state for change detection
         self._idle_active = None
         self._idle_end = None
+
+    @property
+    def config(self) -> Config:
+        return self._control.config
 
     def send(self, request: str, data: array) -> object:
         return self._e3dc.sendRequest((request, "Container", data), keepAlive=True)
@@ -222,7 +226,7 @@ class S10:
         controls_0 = self._control.update(info.averaged,
                                           variation_margin=0)
         controls_var = self._control.update(info.averaged,
-                                            self._control.config.variation_margin)
+                                            self.config.variation_margin)
         if not info.car_connected:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
@@ -244,14 +248,14 @@ class S10:
         if dry_run:
             return
         if changed.battery_max_charge or changed.battery_max_discharge:
-            assert info.controls.battery_max_discharge == CONFIG.battery_max_discharge
+            assert info.controls.battery_max_discharge == self.config.battery_max_discharge
             if info.controls.battery_max_charge == 0:
                 self.set_charge_idle(True)
             else:
                 self._e3dc.set_power_limits(enable=True,
                                             max_charge=info.controls.battery_max_charge,
                                             max_discharge=info.controls.battery_max_discharge,
-                                            discharge_start=CONFIG.battery_min_dis_charge,
+                                            discharge_start=self.config.battery_min_dis_charge,
                                             keepAlive=True)
                 self.set_charge_idle(False)
         may_charge = info.controls.wallbox_current > 0
@@ -265,15 +269,15 @@ class S10:
                 self.toggle_wallbox_charging()
 
     def teardown(self):
-        self.set_charge_idle(CONFIG.default_idle_charge_active,
-                             CONFIG.default_idle_charge_end)
+        self.set_charge_idle(self.config.default_idle_charge_active,
+                             self.config.default_idle_charge_end)
         self._e3dc.set_power_limits(enable=True,
-                                    max_charge=CONFIG.default_battery_max_charge,
-                                    max_discharge=CONFIG.battery_max_discharge,
-                                    discharge_start=CONFIG.battery_min_dis_charge,
+                                    max_charge=self.config.default_battery_max_charge,
+                                    max_discharge=self.config.battery_max_discharge,
+                                    discharge_start=self.config.battery_min_dis_charge,
                                     keepAlive=False)
         self.set_wallbox_max_current(0,
-                                     max(CONFIG.wallbox_power_by_current.keys()))
+                                     max(self.config.wallbox_power_by_current.keys()))
 
     def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:
@@ -415,7 +419,7 @@ def main(argv):
         if not dry_run:
             final_action = S10.teardown
 
-    s10 = S10()
+    s10 = S10(CONFIG)
     try:
         loop = 0
         while num_loops is None or loop < num_loops:
