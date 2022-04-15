@@ -152,6 +152,9 @@ class S10:
         # print(readable(pmData))
         # print(readable(pmsData))
 
+        print('EMS_BATTERY_TO_CAR_MODE:',
+              self.get('EMS_REQ_BATTERY_TO_CAR_MODE'))
+
         for p, v in self.get_wb_info().items():
             print(p, v)
 
@@ -219,6 +222,10 @@ class S10:
             info['solar'][3] += f" but {alg0_soc} in ALG[0]!"
         return info
 
+    def get_local_delta_hours(self, dt_utc) -> int:
+        delta_seconds = self.config.timezone.utcoffset(dt_utc).total_seconds()
+        return int(delta_seconds) // 3600
+
     def update(self, dry_run: bool):
         info = self.get_info()
 
@@ -227,7 +234,17 @@ class S10:
                                           variation_margin=0)
         controls_var = self._control.update(info.averaged,
                                             self.config.variation_margin)
-        if not info.car_connected:
+        battery_to_car_mode = True
+        if info.car_connected:
+            local_time = info.measurements.utc \
+                + self.get_local_delta_hours(info.dt_utc)
+            if self.config.max_wallbox_start <= local_time \
+                    or local_time <= self.config.max_wallbox_end:
+                controls_0.wallbox_current \
+                    = controls_var.wallbox_current \
+                    = max(self.config.wallbox_power_by_current.keys())
+                battery_to_car_mode = False
+        else:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
                 = 0
@@ -267,6 +284,7 @@ class S10:
                 print(
                     f"toggle_wallbox_charging {info.car_may_charge} -> {may_charge}")
                 self.toggle_wallbox_charging()
+                self.set_battery_to_car_mode(battery_to_car_mode)
 
     def teardown(self):
         self.set_charge_idle(self.config.default_idle_charge_active,
@@ -278,6 +296,12 @@ class S10:
                                     keepAlive=False)
         self.set_wallbox_max_current(0,
                                      max(self.config.wallbox_power_by_current.keys()))
+        self.set_battery_to_car_mode(False)
+
+    def set_battery_to_car_mode(self, enabled: bool):
+        _ = self._e3dc.sendRequest(
+            ('EMS_REQ_SET_BATTERY_TO_CAR_MODE', "UChar8", 1 if enabled else 0),
+            keepAlive=True)
 
     def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:

@@ -1,9 +1,13 @@
 from data import Config
+from pytz import timezone
 
 
 def _get() -> Config:
     config = Config(
-        solar_peak_utc = 10.5,  # 11:30 CET
+        timezone = timezone('Europe/Berlin'),
+        max_wallbox_start = 22.0,  # local time
+        max_wallbox_end   =  6.0,  # local time
+        solar_peak_utc    = 10.5,  # 11:30 CET
         variation_margin = 300,
         wallbox_power_by_current =
         {
