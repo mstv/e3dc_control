@@ -30,6 +30,7 @@ class S10:
         # previous control state for change detection
         self._idle_active = None
         self._idle_end = None
+        self._wb_on_utc = None
 
     @property
     def config(self) -> Config:
@@ -244,6 +245,13 @@ class S10:
                     = controls_var.wallbox_current \
                     = max(self.config.wallbox_power_by_current.keys())
                 battery_to_car_mode = False
+            if controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
+                wb_on_minutes = (info.measurements.utc - self._wb_on_utc) * 60
+                if 0 < wb_on_minutes \
+                        and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
+                    controls_0.wallbox_current \
+                        = controls_var.wallbox_current \
+                        = min(self.config.wallbox_power_by_current.keys())
         else:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
@@ -285,6 +293,8 @@ class S10:
                     f"toggle_wallbox_charging {info.car_may_charge} -> {may_charge}")
                 self.toggle_wallbox_charging()
                 self.set_battery_to_car_mode(battery_to_car_mode)
+                if may_charge:
+                    self._wb_on_utc = info.measurements.utc
 
     def teardown(self):
         self.set_charge_idle(self.config.default_idle_charge_active,

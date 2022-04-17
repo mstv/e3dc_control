@@ -9,6 +9,7 @@ def _get() -> Config:
         max_wallbox_end   =  6.0,  # local time
         solar_peak_utc    = 10.5,  # 11:30 CET
         variation_margin = 300,
+        wallbox_min_current_hold_minutes = 10,
         wallbox_power_by_current =
         {
             16: 10500,

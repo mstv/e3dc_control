@@ -10,6 +10,7 @@ class Config:
     max_wallbox_end: float  # local time
     solar_peak_utc: float
     variation_margin: int
+    wallbox_min_current_hold_minutes: int
     wallbox_power_by_current: dict
     default_idle_charge_active: bool
     default_idle_charge_end: array  # local time
