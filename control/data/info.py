@@ -21,6 +21,7 @@ class Info:
     solar_delta: int
     batt: int
     grid: int
+    status: int
     car_connected: bool
     car_may_charge: bool
     car_charging: bool

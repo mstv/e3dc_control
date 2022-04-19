@@ -1,16 +1,34 @@
 from data import Info
+from enum import IntFlag, unique
 from json import dumps
+
+
+@unique
+class Status(IntFlag):
+    DcDcAlive = 1 << 0
+    PowerMeterAlive = 1 << 1
+    BatteryModuleAlive = 1 << 2
+    PvModuleAlive = 1 << 3
+    PvInverterInited = 1 << 4
+    ServerConnectionAlive = 1 << 5
+    PvDerated = 1 << 6
+
+    PvAlive = DcDcAlive | PowerMeterAlive | BatteryModuleAlive \
+        | PvModuleAlive | PvInverterInited
 
 
 def one_line(info: Info) -> str:
     wb_max = max(0, info.measurements.solar - info.measurements.house)
     wb_delta = wb_max - info.measurements.wallbox
     wb_status = '>' if info.car_charging else '-' if info.car_connected else '!'
+    solar_status = '!' if (info.status & Status.PvAlive) != Status.PvAlive \
+        else ':' if (info.status & Status.PvDerated) != 0 \
+        else '<'
     return str(info.dt_utc)[0:19] \
         + f" {info.measurements.soc:3}%" \
-        + (f" {info.batt:5}>b" if info.batt > 0 else f" {-info.batt:5}<b") \
+        + (f" {info.batt:4}>b" if info.batt > 0 else f" {-info.batt:4}<b") \
         + (f" {info.grid:5}<g" if info.grid > 0 else f" {-info.grid:5}>g") \
-        + f" {info.measurements.solar:5}<s{info.solar_delta:<+5}" \
+        + f" {info.measurements.solar:5}{solar_status}s{info.solar_delta:<+5}" \
         + f" {info.measurements.house:5}>h" \
         + f" {info.measurements.wallbox:5}{wb_status}w" \
         + f" {wb_max:5}" \
@@ -21,6 +39,7 @@ def one_line(info: Info) -> str:
         + f" {info.controls.battery_max_discharge:4}<b<{info.controls.battery_max_charge:<4}" \
         + f" {info.control_state.value}" \
         + f" {(0.001 * info.max_solar):4.1f}" \
+        + f" {info.status:06x}" \
         + f" {info.averaged.solar} {info.averaged.house} {info.averaged.wallbox}"
 
 

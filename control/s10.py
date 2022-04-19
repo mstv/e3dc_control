@@ -61,6 +61,7 @@ class S10:
         grid = self.get('EMS_REQ_POWER_GRID')
         solar_delta = int(self.get_solar_power(0, 0)
                           - self.get_solar_power(0, 1))
+        status = self.get("EMS_REQ_SYS_STATUS")
 
         self._ma_measurements.add(measurements)
         averaged = self._ma_measurements.get()
@@ -78,6 +79,7 @@ class S10:
                     solar_delta=solar_delta,
                     batt=batt,
                     grid=grid,
+                    status=status,
                     car_connected=car_connected,
                     car_may_charge=car_may_charge,
                     car_charging=wb_status['charging'],
