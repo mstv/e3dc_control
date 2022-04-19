@@ -1,6 +1,7 @@
 from dataclasses import dataclass, fields
 from copy import deepcopy
 
+
 class MovingAverage:
     def __init__(self, n: int):
         self._n = n
@@ -19,16 +20,18 @@ class MovingAverage:
         n = len(self._queue)
         if n == 0:
             raise Exception("no average without data")
+        if type(self._queue[0]) == int:
+            return sum(self._queue) // n
         accu = deepcopy(self._queue[0])
         for data in self._queue[1:]:
             for field in fields(accu):
                 setattr(accu, field.name,
                         getattr(accu, field.name) + getattr(data, field.name))
         for field in fields(accu):
-            sum = getattr(accu, field.name)
+            total = getattr(accu, field.name)
             if field.type == int:
-                avg = sum // n
+                avg = total // n
             else:
-                avg = sum / n
+                avg = total / n
             setattr(accu, field.name, avg)
         return accu

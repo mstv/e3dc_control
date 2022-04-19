@@ -26,7 +26,10 @@ class S10:
                           password=E3DC_Config.PASSWORD,
                           ipAddress=E3DC_Config.IP,
                           key=E3DC_Config.SECRET)
-        self._ma_measurements = MovingAverage(4)
+        self._ma_solar = MovingAverage(1)
+        self._ma_house = MovingAverage(3)
+        self._ma_wallbox = MovingAverage(2)
+        self._ignore_consumption_counter = 0
         # previous control state for change detection
         self._idle_active = None
         self._idle_end = None
@@ -50,7 +53,7 @@ class S10:
                           ])
         return power[2][1][2][1][2]
 
-    def get_info(self) -> Info:
+    def get_info(self, ignore_consumption: bool = False) -> Info:
         utime = self.get("INFO_REQ_UTC_TIME")
         measurements = Measurements(solar=self.get('EMS_REQ_POWER_PV'),
                                     house=self.get('EMS_REQ_POWER_HOME'),
@@ -63,9 +66,15 @@ class S10:
                           - self.get_solar_power(0, 1))
         status = self.get("EMS_REQ_SYS_STATUS")
 
-        self._ma_measurements.add(measurements)
-        averaged = self._ma_measurements.get()
-        averaged.utc = measurements.utc  # do not average time
+        self._ma_solar.add(measurements.solar)
+        if not ignore_consumption:
+            self._ma_house.add(measurements.house)
+            self._ma_wallbox.add(measurements.wallbox)
+        averaged = Measurements(solar=self._ma_solar.get(),
+                                house=self._ma_house.get(),
+                                wallbox=self._ma_wallbox.get(),
+                                soc=measurements.soc,
+                                utc=measurements.utc)
 
         wb = self.get_wb_info()
         wb_status = wb['status']
@@ -230,7 +239,9 @@ class S10:
         return int(delta_seconds) // 3600
 
     def update(self, dry_run: bool):
-        info = self.get_info()
+        if self._ignore_consumption_counter > 0:
+            self._ignore_consumption_counter -= 1
+        info = self.get_info(self._ignore_consumption_counter > 0)
 
         # calculate
         controls_0 = self._control.update(info.averaged,
@@ -274,6 +285,9 @@ class S10:
         # set
         if dry_run:
             return
+        if any_changed:
+            # ignore misleading drop/peak in house consumption
+            self._ignore_consumption_counter = 4
         if changed.battery_max_charge or changed.battery_max_discharge:
             assert info.controls.battery_max_discharge == self.config.battery_max_discharge
             if info.controls.battery_max_charge == 0:
@@ -289,7 +303,6 @@ class S10:
         if changed.wallbox_current or (info.car_may_charge and not may_charge):
             if may_charge:
                 self.set_wallbox_max_current(0, info.controls.wallbox_current)
-                time.sleep(3.0)  # avoid misleading peak in house consumption
             if info.car_may_charge != may_charge:
                 print(
                     f"toggle_wallbox_charging {info.car_may_charge} -> {may_charge}")
@@ -401,7 +414,7 @@ def main(argv):
     verbose = False
     dry_run = False
     num_loops = None  # infinite
-    wait = 2
+    wait = 1
 
     try:
         opts, _ = getopt.getopt(argv, "vdn:w:it:",
