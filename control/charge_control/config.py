@@ -25,9 +25,12 @@ def _get() -> Config:
         default_idle_charge_active = True,
         default_idle_charge_end = [10, 30],  # local time
         default_battery_max_charge = 1700,
+        battery_charge_adapt_offset = 45,
+        battery_charge_adapt_factor = 1.03,
         battery_max_discharge = 4500,
+        battery_min_discharge = 65,
         battery_max_charge = 4500,
-        battery_min_dis_charge = 65,
+        battery_min_charge = 100,
         battery_watthours = 9830,
         solar_max = 11400,
         grid_max = None)

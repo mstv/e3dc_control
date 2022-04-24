@@ -282,7 +282,7 @@ class S10:
                 self._e3dc.set_power_limits(enable=True,
                                             max_charge=info.controls.battery_max_charge,
                                             max_discharge=info.controls.battery_max_discharge,
-                                            discharge_start=self.config.battery_min_dis_charge,
+                                            discharge_start=self.config.battery_min_discharge,
                                             keepAlive=True)
                 self.set_charge_idle(False)
         may_charge = info.controls.wallbox_current > 0
@@ -304,7 +304,7 @@ class S10:
         self._e3dc.set_power_limits(enable=True,
                                     max_charge=self.config.default_battery_max_charge,
                                     max_discharge=self.config.battery_max_discharge,
-                                    discharge_start=self.config.battery_min_dis_charge,
+                                    discharge_start=self.config.battery_min_discharge,
                                     keepAlive=False)
         self.set_wallbox_max_current(0,
                                      max(self.config.wallbox_power_by_current.keys()))

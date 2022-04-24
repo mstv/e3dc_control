@@ -15,9 +15,12 @@ class Config:
     default_idle_charge_active: bool
     default_idle_charge_end: array  # local time
     default_battery_max_charge: int
+    battery_charge_adapt_offset: int
+    battery_charge_adapt_factor: float
     battery_max_discharge: int
+    battery_min_discharge: int
     battery_max_charge: int
-    battery_min_dis_charge: int
+    battery_min_charge: int
     battery_watthours: int
     solar_max: int
     grid_max: int

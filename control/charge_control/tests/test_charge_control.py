@@ -22,6 +22,13 @@ class Tester:
     def config(self) -> Config:
         return self._charge_control.config
 
+    def assert_adapt(self, max_charge, expected):
+        controls = Controls(None, None, max_charge)
+        controls = self._charge_control._adapt(controls)
+        assert controls.wallbox_current is None
+        assert controls.battery_max_discharge is None
+        assert controls.battery_max_charge == expected
+
     def update(self, solar, house, wallbox, variation_margin=0) -> Controls:
         soc = 0
         utc = 0.0
@@ -29,13 +36,35 @@ class Tester:
                                            variation_margin)
 
     def assert_battery_max_charge(self, solar, house, wallbox, variation_margin, expected):
-        c = self.update(solar, house, wallbox, variation_margin)
-        assert c.battery_max_charge == expected
+        soc = 0
+        utc = 0.0
+        measurements = Measurements(solar, house, wallbox, soc, utc)
+        max_charge = self._charge_control._charge_sm.update(measurements,
+                                                            variation_margin)
+        assert max_charge == expected
 
 
 @pytest.fixture
 def t(charge_control: ChargeControl) -> Tester:
     yield Tester(charge_control)
+
+
+def test_adapt(config):
+    config.battery_charge_adapt_offset = 42
+    config.battery_charge_adapt_factor = 1.1
+    config.battery_max_charge = 42 + 220 - 1
+    t = Tester(ChargeControl(config))
+    t.assert_adapt(0, 0)
+    t.assert_adapt(1, 42 + 1)
+    t.assert_adapt(4, 42 + 4)
+    t.assert_adapt(5, 42 + 6)
+    t.assert_adapt(6, 42 + 7)
+    t.assert_adapt(10, 42 + 11)
+    t.assert_adapt(100, 42 + 110)
+    t.assert_adapt(198, 42 + 218)
+    t.assert_adapt(199, 42 + 219)
+    t.assert_adapt(200, 42 + 220 - 1)
+    t.assert_adapt(201, 42 + 220 - 1)
 
 
 def test_limit():
@@ -76,14 +105,14 @@ def test_update_grid_max(t):
     t.assert_battery_max_charge(
         t.config.grid_max + 1, 0, 0, 0, 1)
     t.assert_battery_max_charge(
-        t.config.grid_max + t.config.battery_min_dis_charge, 0, 0, 0, t.config.battery_min_dis_charge)
+        t.config.grid_max + t.config.battery_min_charge, 0, 0, 0, t.config.battery_min_charge)
     t.assert_battery_max_charge(
         t.config.grid_max + t.config.battery_max_charge, 0, 0, 0, t.config.battery_max_charge)
     t.assert_battery_max_charge(
         t.config.grid_max + t.config.battery_max_charge + 1, 0, 0, 0, t.config.battery_max_charge + 1)
 
     battery_charge = (t.config.battery_max_charge +
-                      t.config.battery_min_dis_charge) // 2
+                      t.config.battery_min_charge) // 2
     solar = t.config.grid_max + battery_charge
     t.assert_battery_max_charge(solar + 0, 0, 0, 0, battery_charge)
     t.assert_battery_max_charge(solar + 1, 1, 0, 0, battery_charge)
