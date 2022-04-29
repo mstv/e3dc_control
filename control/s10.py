@@ -9,6 +9,7 @@ import os
 from print import one_line, readable, filter
 import sys
 import time
+import traceback
 
 this_path = os.path.dirname(__file__)
 config_path = os.path.abspath(os.path.join(this_path, '../../e3dc_config'))
@@ -468,14 +469,23 @@ def main(argv):
         if not dry_run:
             final_action = S10.teardown
 
-    s10 = S10(CONFIG)
     try:
+        s10 = None
         loop = 0
         while num_loops is None or loop < num_loops:
             loop += 1
-            loop_action(s10)
+            try:
+                if s10 is None:
+                    s10 = S10(CONFIG)
+                loop_action(s10)
+                loop_wait = wait
+            except Exception as ex:
+                s10 = None
+                loop_wait = 5
+                print('ERROR:', ex)
+                traceback.print_exc()
             if loop != num_loops:
-                time.sleep(wait)
+                time.sleep(loop_wait)
     finally:
         final_action(s10)
 
