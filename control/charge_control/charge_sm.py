@@ -1,4 +1,5 @@
 from data import Config, Measurements
+from math import sqrt
 
 
 class ChargeSM:
@@ -50,8 +51,21 @@ class ChargeSM:
         max_grid_denied = self._max_solar - self.config.grid_max
         if max_grid_denied <= 0 or self._half_grid_max_utc is None:
             return 0
-        # rough preliminary estimate: rectangle of max_grid_denied for 2 hours
-        watthours = int((2.0 - hours_after_peak) * max_grid_denied)
+        # s(t) = a * (t - t_peak) ^ 2 + s_peak
+        # with a < 0 and s_peak approximated using self._max_solar
+        #      s(t) - s_peak
+        # a = ----------------
+        #     (t - t_peak) ^ 2
+        # (t - t_peak) = sqrt( (s(t) - s_peak) / a )
+        # Integral (a * x ^ 2 + b) dx = a / 3 * x ^ 3 + b * x + constant
+        a = (self.config.grid_max / 2 - self._max_solar) \
+            / pow(self._half_grid_max_utc - self.config.solar_peak_utc, 2)
+        stop_hours_after_peak = sqrt(-max_grid_denied / a)
+        if hours_after_peak >= stop_hours_after_peak:
+            return 0
+        watthours = round(
+            a / 3 * (pow(stop_hours_after_peak, 3) - pow(hours_after_peak, 3))
+            + max_grid_denied * (stop_hours_after_peak - hours_after_peak))
         return watthours
 
     def _update_solar_parabola(self, utc: float, solar: int):
@@ -62,5 +76,8 @@ class ChargeSM:
         else:
             if self._max_solar < solar:
                 self._max_solar = solar
-            if self._half_grid_max_utc is None and solar >= self.config.grid_max // 2:
+            if self._half_grid_max_utc is None \
+                    and solar >= self.config.grid_max // 2 \
+                    and utc is not None \
+                    and utc < self.config.solar_peak_utc:
                 self._half_grid_max_utc = utc
