@@ -270,6 +270,12 @@ class S10:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
                 = 0
+        if info.measurements.wallbox > 0 \
+                or info.car_connected and controls_var.wallbox_current == 0 \
+                or info.measurements.soc == 100:
+            controls_0.battery_max_charge \
+                = controls_var.battery_max_charge \
+                = self.config.battery_max_charge
         info.controls, changed = self._controls_sm.update(controls_0,
                                                           controls_var)
         any_changed = changed.wallbox_current \
