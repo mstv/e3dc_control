@@ -1,10 +1,11 @@
 from array import array
 from charge_control import ChargeControl, ControlsSM, CONFIG
 from tools import MovingAverage
-from data import Config, Controls, ControlState, Info, Measurements
+from data import BatteryCharge, Config, Controls, ControlDirectives, ControlState, Info, Loop, Measurements
 from datetime import datetime
 from e3dc import E3DC
 import getopt
+import json
 import os
 from print import one_line, readable, filter
 import sys
@@ -239,7 +240,7 @@ class S10:
         delta_seconds = self.config.timezone.utcoffset(dt_utc).total_seconds()
         return int(delta_seconds) // 3600
 
-    def update(self, dry_run: bool):
+    def update(self, dry_run: bool, battery_charge: BatteryCharge or int):
         if self._ignore_consumption_counter > 0:
             self._ignore_consumption_counter -= 1
         info = self.get_info(self._ignore_consumption_counter > 0)
@@ -249,6 +250,7 @@ class S10:
                                           variation_margin=0)
         controls_var = self._control.update(info.averaged,
                                             self.config.variation_margin)
+
         battery_to_car_mode = True
         if info.car_connected:
             local_time = info.measurements.utc \
@@ -270,12 +272,31 @@ class S10:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
                 = 0
-        if info.measurements.wallbox > 0 \
-                or info.car_connected and controls_var.wallbox_current == 0 \
-                or info.measurements.soc == 100:
+
+        battery_max_charge_override = None
+        if type(battery_charge) == int:
+            battery_max_charge_override = int(battery_charge)
+        elif battery_charge == BatteryCharge.Suppressed.value:
+            battery_max_charge_override = 0
+        elif battery_charge == BatteryCharge.Automatic.value:
+            pass
+        elif battery_charge == BatteryCharge.Default.value:
+            battery_max_charge_override = self.config.default_battery_max_charge
+        elif battery_charge == BatteryCharge.WallboxActive.value:
+            if info.measurements.wallbox > 0 \
+                    or info.car_connected and controls_var.wallbox_current == 0 \
+                    or info.measurements.soc == 100:
+                battery_max_charge_override = self.config.battery_max_charge
+        elif battery_charge == BatteryCharge.Full.value:
+            battery_max_charge_override = self.config.battery_max_charge
+        else:
+            raise NotImplementedError(f"BatteryCharge value {battery_charge}")
+
+        if battery_max_charge_override is not None:
             controls_0.battery_max_charge \
                 = controls_var.battery_max_charge \
-                = self.config.battery_max_charge
+                = battery_max_charge_override
+
         info.controls, changed = self._controls_sm.update(controls_0,
                                                           controls_var)
         any_changed = changed.wallbox_current \
@@ -412,12 +433,18 @@ def send_request(s10: S10, tag: str):
     print(value)
 
 
+def no_teardown(s10):
+    pass
+
+
 # main
 
 
 def main(argv):
+    global final_action
+    final_action = no_teardown
+
     loop_action = None
-    def final_action(s10): pass
     verbose = False
     dry_run = False
     num_loops = None  # infinite
@@ -471,7 +498,19 @@ def main(argv):
                 num_loops = 1
 
     if loop_action is None:
-        def loop_action(s10): S10.update(s10, dry_run)
+        def loop_action(s10) -> bool:
+            with open(os.path.join(config_path, 'e3dc_directives.json'), 'r') as directives_file:
+                directives = directives_file.read()
+                directives = json.loads(directives)
+                directives = ControlDirectives(**directives)
+            if directives.loop == Loop.ExitWithTeardown.value:
+                return False
+            elif directives.loop == Loop.BreakWithoutTeardown.value:
+                print("breaking loop without teardown")
+                global final_action
+                final_action = no_teardown
+                return False
+            S10.update(s10, dry_run, directives.battery_charge)
         if not dry_run:
             final_action = S10.teardown
 
@@ -483,7 +522,8 @@ def main(argv):
             try:
                 if s10 is None:
                     s10 = S10(CONFIG)
-                loop_action(s10)
+                if loop_action(s10) is False:
+                    break
                 loop_wait = wait
             except Exception as ex:
                 s10 = None
