@@ -38,9 +38,10 @@ def test_get_charge_by_solar_parabola(sm):
 
 
 def test_get_max_grid_denied_watthours(sm):
-    peak_utc = sm.config.solar_peak_utc
-    before_peak_utc = sm.config.solar_peak_utc - 1.0 / 3600
-    after_peak_utc = sm.config.solar_peak_utc + 1.0 / 3600
+    peak_utc = (sm.config.solar_peak_start_utc
+                + sm.config.solar_peak_end_utc) / 2
+    before_peak_utc = sm.config.solar_peak_start_utc - 1.0 / 3600
+    after_peak_utc = sm.config.solar_peak_end_utc + 1.0 / 3600
     min_utc = 0.0
     max_utc = 24.0
 

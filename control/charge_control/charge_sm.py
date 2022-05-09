@@ -46,9 +46,10 @@ class ChargeSM:
         return 0
 
     def _get_max_grid_denied_watthours(self, utc: float) -> int or None:
-        hours_after_peak = utc - self.config.solar_peak_utc
-        if hours_after_peak < 0:
+        if utc < self.config.solar_peak_start_utc:
             return None  # future grid_denied integral cannot be estimated yet
+        hours_after_peak_end = utc - self.config.solar_peak_end_utc  # right side of parabola
+        hours_before_peak_end = -hours_after_peak_end  # plateau
         max_grid_denied = self._max_solar - self.config.grid_max
         if max_grid_denied <= 0 or self._half_grid_max_utc is None:
             return 0
@@ -60,13 +61,15 @@ class ChargeSM:
         # (t - t_peak) = sqrt( (s(t) - s_peak) / a )
         # Integral (a * x ^ 2 + b) dx = a / 3 * x ^ 3 + b * x + constant
         a = (self.config.grid_max / 2 - self._max_solar) \
-            / pow(self._half_grid_max_utc - self.config.solar_peak_utc, 2)
-        stop_hours_after_peak = sqrt(-max_grid_denied / a)
-        if hours_after_peak >= stop_hours_after_peak:
+            / pow(self._half_grid_max_utc - self.config.solar_peak_start_utc, 2)
+        stop_hours_after_peak_end = sqrt(-max_grid_denied / a)
+        if hours_after_peak_end >= stop_hours_after_peak_end:
             return 0
-        watthours = round(
-            a / 3 * (pow(stop_hours_after_peak, 3) - pow(hours_after_peak, 3))
-            + max_grid_denied * (stop_hours_after_peak - hours_after_peak))
+        watthours = max_grid_denied * max(0, hours_before_peak_end) \
+            + round(a / 3 * (pow(stop_hours_after_peak_end, 3)
+                             - pow(hours_after_peak_end, 3))
+                    + max_grid_denied * (stop_hours_after_peak_end
+                                         - hours_after_peak_end))
         return watthours
 
     def _update_solar_parabola(self, utc: float, solar: int):
@@ -80,5 +83,5 @@ class ChargeSM:
             if self._half_grid_max_utc is None \
                     and solar >= self.config.grid_max // 2 \
                     and utc is not None \
-                    and utc < self.config.solar_peak_utc:
+                    and utc < self.config.solar_peak_start_utc:
                 self._half_grid_max_utc = utc

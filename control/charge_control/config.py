@@ -7,7 +7,8 @@ def _get() -> Config:
         timezone = timezone('Europe/Berlin'),
         max_wallbox_start = 22.0,  # local time
         max_wallbox_end   =  6.0,  # local time
-        solar_peak_utc    = 10.5,  # 11:30 CET
+        solar_peak_start_utc = 10.50,  # 11:30 CET
+        solar_peak_end_utc   = 10.75,  # 11:45 CET
         variation_margin = 300,
         additional_solar_variation_margin = 0,
         wallbox_min_current_hold_minutes = 10,

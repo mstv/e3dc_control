@@ -8,7 +8,8 @@ class Config:
     timezone: timezone
     max_wallbox_start: float  # local time
     max_wallbox_end: float  # local time
-    solar_peak_utc: float
+    solar_peak_start_utc: float
+    solar_peak_end_utc: float
     variation_margin: int
     additional_solar_variation_margin: int
     wallbox_min_current_hold_minutes: int
