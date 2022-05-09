@@ -1,23 +1,8 @@
-from data import Info
-from enum import IntFlag, unique
+from data import ControlInfo, Status
 from json import dumps
 
 
-@unique
-class Status(IntFlag):
-    DcDcAlive = 1 << 0
-    PowerMeterAlive = 1 << 1
-    BatteryModuleAlive = 1 << 2
-    PvModuleAlive = 1 << 3
-    PvInverterInited = 1 << 4
-    ServerConnectionAlive = 1 << 5
-    PvDerated = 1 << 6
-
-    PvAlive = DcDcAlive | PowerMeterAlive | BatteryModuleAlive \
-        | PvModuleAlive | PvInverterInited
-
-
-def one_line(info: Info) -> str:
+def one_line(info: ControlInfo) -> str:
     wb_max = max(0, info.measurements.solar - info.measurements.house)
     wb_delta = wb_max - info.measurements.wallbox
     wb_status = '>' if info.car_charging else '-' if info.car_connected else '!'

@@ -1,61 +1,67 @@
 from array import array
-from charge_control import ChargeControl, ControlsSM, CONFIG
-from tools import MovingAverage
-from data import BatteryCharge, Config, Controls, ControlDirectives, ControlState, Info, Loop, Measurements
+from data import Info, Measurements
 from datetime import datetime
 from e3dc import E3DC
-import getopt
-import json
-import os
-from print import one_line, readable, filter
-import sys
-import time
-import traceback
-
-this_path = os.path.dirname(__file__)
-config_path = os.path.abspath(os.path.join(this_path, '../../e3dc_config'))
-sys.path.append(config_path)
-
-from e3dc_config import E3DC_Config
 
 
-class S10:
-    def __init__(self, config: Config):
-        self._control = ChargeControl(config)
-        self._controls_sm = ControlsSM()
-        self._e3dc = E3DC(E3DC.CONNECT_LOCAL,
-                          username=E3DC_Config.USERNAME,
-                          password=E3DC_Config.PASSWORD,
-                          ipAddress=E3DC_Config.IP,
-                          key=E3DC_Config.SECRET)
-        self._ma_solar = MovingAverage(1)
-        self._ma_house = MovingAverage(3)
-        self._ma_wallbox = MovingAverage(2)
-        self._ignore_consumption_counter = 0
-        # previous control state for change detection
+class E3dcDirect:
+    def __init__(self, e3dc: E3DC):
+        self._e3dc = e3dc
+        # previously requested state for change detection
         self._idle_active = None
         self._idle_end = None
-        self._wb_on_utc = None
 
-    @property
-    def config(self) -> Config:
-        return self._control.config
+    # facade functions
 
-    def send(self, request: str, data: array) -> object:
-        return self._e3dc.sendRequest((request, "Container", data), keepAlive=True)
-
-    def get(self, tag) -> object:
+    def get(self, tag: str) -> object:
         return self._e3dc.sendRequestTag(tag, keepAlive=True)
 
-    def get_solar_power(self, pvi_index: int, pv_string_index: int) -> float:
-        power = self.send("PVI_REQ_DATA",
-                          [
-                              ("PVI_INDEX", "Uint16", pvi_index),
-                              ("PVI_REQ_DC_POWER", "Uint16", pv_string_index),
-                          ])
-        return power[2][1][2][1][2]
+    def send_request(self, request: tuple):
+        return self._e3dc.sendRequest(request, keepAlive=True)
 
-    def get_info(self, ignore_consumption: bool = False) -> Info:
+    def get_battery_data(self):
+        return self._e3dc.get_battery_data(keepAlive=True)
+
+    def get_db_data(self):
+        return self._e3dc.get_db_data(keepAlive=True)
+
+    def get_idle_periods(self):
+        return self._e3dc.get_idle_periods(keepAlive=True)
+
+    def get_power_settings(self):
+        return self._e3dc.get_power_settings(keepAlive=True)
+
+    def get_pvi_data(self):
+        return self._e3dc.get_pvi_data(keepAlive=True)
+
+    def get_system_info(self):
+        return self._e3dc.get_system_info(keepAlive=True)
+
+    def get_system_status(self):
+        return self._e3dc.get_system_status(keepAlive=True)
+
+    def poll(self):
+        return self._e3dc.poll(keepAlive=True)
+
+    def poll_switches(self):
+        return self._e3dc.poll_switches(keepAlive=True)
+
+    def set_power_limits(self,
+                         enable: bool,
+                         max_charge: int,
+                         max_discharge: int,
+                         discharge_start: int):
+        return self._e3dc.set_power_limits(enable=enable,
+                                           max_charge=max_charge,
+                                           max_discharge=max_discharge,
+                                           discharge_start=discharge_start)
+
+    # control functions
+
+    def send(self, request: str, data: array) -> object:
+        return self.send_request((request, "Container", data))
+
+    def get_info(self) -> Info:
         utime = self.get("INFO_REQ_UTC_TIME")
         measurements = Measurements(solar=self.get('EMS_REQ_POWER_PV'),
                                     house=self.get('EMS_REQ_POWER_HOME'),
@@ -68,16 +74,6 @@ class S10:
                           - self.get_solar_power(0, 1))
         status = self.get("EMS_REQ_SYS_STATUS")
 
-        self._ma_solar.add(measurements.solar)
-        if not ignore_consumption:
-            self._ma_house.add(measurements.house)
-            self._ma_wallbox.add(measurements.wallbox)
-        averaged = Measurements(solar=self._ma_solar.get(),
-                                house=self._ma_house.get(),
-                                wallbox=self._ma_wallbox.get(),
-                                soc=measurements.soc,
-                                utc=measurements.utc)
-
         wb = self.get_wb_info()
         wb_status = wb['status']
         wb_solar = wb['solar']
@@ -85,8 +81,6 @@ class S10:
         car_may_charge = not wb_status['canceled'] and car_connected
         info = Info(dt_utc=datetime.utcfromtimestamp(utime),
                     measurements=measurements,
-                    averaged=averaged,
-                    max_solar=self._control._charge_sm._max_solar,
                     solar_delta=solar_delta,
                     batt=batt,
                     grid=grid,
@@ -94,86 +88,19 @@ class S10:
                     car_connected=car_connected,
                     car_may_charge=car_may_charge,
                     car_charging=wb_status['charging'],
+                    car_max_current=wb_status['max A'],
                     car_soc=wb_solar[2],
                     car_total=wb_solar[5],
-                    car_grid=wb['grid'][0],
-                    controls=None,
-                    control_state=ControlState.NotUpdated)
+                    car_grid=wb['grid'][0])
         return info
 
-    def print_all(self, verbose: bool):
-        if verbose:
-            print('poll')
-        data = self._e3dc.poll(keepAlive=True)
-        if verbose:
-            time = data['time']
-            data['time'] = str(time)
-            print(readable(data))
-            data['time'] = time
-        else:
-            data['production'].pop('add')
-            print(
-                readable(filter(data, ['consumption', 'production', 'stateOfCharge'])))
-
-        if verbose:
-            print('get_pvi_data')
-        pvi_data = self._e3dc.get_pvi_data(keepAlive=True)
-        # print(readable(e3dc.get_pvis_data())) as 1-element array
-        solar_data = pvi_data['strings']
-        solar_powers = {
-            f"solar {string}": solar_data[string]['power'] for string in solar_data}
-        print(readable(solar_powers))
-        print(readable(
-            filter(pvi_data, ['deviceState', 'onGrid', 'powerMode', 'systemMode', 'state'])))
-        if verbose:
-            print(readable(pvi_data))
-
-        if verbose:
-            print('get_power_settings')
-        powerSettings = self._e3dc.get_power_settings(keepAlive=True)
-        print(readable(powerSettings))
-        # set_power_limits
-        # set_powersave
-        # set_weather_regulated_charge
-
-        if verbose:
-            print('get_system_status')
-        print(readable(self._e3dc.get_system_status(keepAlive=True)))
-
-        # 'deratePower', 'maxBatChargePower', 'maxBatDischargePower', 'installedBatteryCapacity'
-        if verbose:
-            print('get_system_info')
-            print(readable(self._e3dc.get_system_info(keepAlive=True)))
-
-            print('poll_switches (smart home)')
-            print(readable(self._e3dc.poll_switches(keepAlive=True)))
-            # set_switch_onoff
-
-            print('get_idle_periods')
-            print(readable(self._e3dc.get_idle_periods(keepAlive=True)))
-            # set_idle_periods
-
-            print('get_db_data (total sums)')
-            print(readable(self._e3dc.get_db_data(keepAlive=True)))
-
-            print('get_battery_data')
-            print(readable(self._e3dc.get_battery_data(keepAlive=True)))
-            # print(readable(self._e3dc.get_batteries_data(keepAlive=True))) as 1-element array
-
-        # broken
-        # pmData = self._e3dc.get_powermeter_data(keepAlive=True)
-        # pmsData = self._e3dc.get_powermeters_data(keepAlive=True)
-        # print(readable(pmData))
-        # print(readable(pmsData))
-
-        print('EMS_BATTERY_TO_CAR_MODE:',
-              self.get('EMS_REQ_BATTERY_TO_CAR_MODE'))
-
-        for p, v in self.get_wb_info().items():
-            print(p, v)
-
-        if verbose:
-            print(solar_data)
+    def get_solar_power(self, pvi_index: int, pv_string_index: int) -> float:
+        power = self.send("PVI_REQ_DATA",
+                          [
+                              ("PVI_INDEX", "Uint16", pvi_index),
+                              ("PVI_REQ_DC_POWER", "Uint16", pv_string_index),
+                          ])
+        return power[2][1][2][1][2]
 
     def get_wb(self, wb_index: int = 0) -> object:
         return self.send("WB_REQ_DATA",
@@ -236,133 +163,13 @@ class S10:
             info['solar'][3] += f" but {alg0_soc} in ALG[0]!"
         return info
 
-    def get_local_delta_hours(self, dt_utc) -> int:
-        delta_seconds = self.config.timezone.utcoffset(dt_utc).total_seconds()
-        return int(delta_seconds) // 3600
-
-    def update(self, dry_run: bool, battery_charge: BatteryCharge or int):
-        if self._ignore_consumption_counter > 0:
-            self._ignore_consumption_counter -= 1
-        info = self.get_info(self._ignore_consumption_counter > 0)
-
-        # calculate
-        controls_0 = self._control.update(info.averaged,
-                                          variation_margin=0)
-        controls_var = self._control.update(info.averaged,
-                                            self.config.variation_margin)
-
-        battery_to_car_mode = True
-        if info.car_connected:
-            local_time = info.measurements.utc \
-                + self.get_local_delta_hours(info.dt_utc)
-            if self.config.max_wallbox_start <= local_time \
-                    or local_time <= self.config.max_wallbox_end:
-                controls_0.wallbox_current \
-                    = controls_var.wallbox_current \
-                    = max(self.config.wallbox_power_by_current.keys())
-                battery_to_car_mode = False
-            if controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
-                wb_on_minutes = (info.measurements.utc - self._wb_on_utc) * 60
-                if 0 < wb_on_minutes \
-                        and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
-                    controls_0.wallbox_current \
-                        = controls_var.wallbox_current \
-                        = min(self.config.wallbox_power_by_current.keys())
-        else:
-            controls_0.wallbox_current \
-                = controls_var.wallbox_current \
-                = 0
-
-        battery_max_charge_override = None
-        if type(battery_charge) == int:
-            battery_max_charge_override = int(battery_charge)
-        elif battery_charge == BatteryCharge.Suppressed.value:
-            battery_max_charge_override = 0
-        elif battery_charge == BatteryCharge.Automatic.value:
-            pass
-        elif battery_charge == BatteryCharge.Default.value:
-            battery_max_charge_override = self.config.default_battery_max_charge
-        elif battery_charge == BatteryCharge.WallboxActive.value:
-            if info.measurements.wallbox > 0 \
-                    or info.car_connected and controls_var.wallbox_current == 0 \
-                    or info.measurements.soc == 100:
-                battery_max_charge_override = self.config.battery_max_charge
-        elif battery_charge == BatteryCharge.Full.value:
-            battery_max_charge_override = self.config.battery_max_charge
-        else:
-            raise NotImplementedError(f"BatteryCharge value {battery_charge}")
-
-        if battery_max_charge_override is not None:
-            controls_0.battery_max_charge \
-                = controls_var.battery_max_charge \
-                = battery_max_charge_override
-
-        info.controls, changed = self._controls_sm.update(controls_0,
-                                                          controls_var)
-        any_changed = changed.wallbox_current \
-            or changed.battery_max_discharge \
-            or changed.battery_max_charge
-        info.control_state = ControlState.Changed if any_changed else ControlState.Unchanged
-        info.controls = self._control.limit(info.controls)
-
-        # print
-        # print("chg:", changed, "->", any_changed)
-        # print("ctr:", info.controls)
-        print(one_line(info))
-
-        # set
-        if dry_run:
-            return
-        if any_changed:
-            # ignore misleading drop/peak in house consumption
-            self._ignore_consumption_counter = 4
-        if changed.battery_max_charge or changed.battery_max_discharge:
-            assert info.controls.battery_max_discharge == self.config.battery_max_discharge
-            if info.controls.battery_max_charge == 0:
-                self.set_charge_idle(True)
-            else:
-                self._e3dc.set_power_limits(enable=True,
-                                            max_charge=info.controls.battery_max_charge,
-                                            max_discharge=info.controls.battery_max_discharge,
-                                            discharge_start=self.config.battery_min_discharge,
-                                            keepAlive=True)
-                self.set_charge_idle(False)
-        may_charge = info.controls.wallbox_current > 0
-        if changed.wallbox_current or (info.car_may_charge and not may_charge):
-            if may_charge:
-                self.set_wallbox_max_current(0, info.controls.wallbox_current)
-            if info.car_may_charge != may_charge:
-                print(
-                    f"toggle_wallbox_charging {info.car_may_charge} -> {may_charge}")
-                self.toggle_wallbox_charging()
-                self.set_battery_to_car_mode(battery_to_car_mode)
-                if may_charge:
-                    self._wb_on_utc = info.measurements.utc
-
-    def teardown(self):
-        self.set_charge_idle(self.config.default_idle_charge_active,
-                             self.config.default_idle_charge_end)
-        self._e3dc.set_power_limits(enable=True,
-                                    max_charge=self.config.default_battery_max_charge,
-                                    max_discharge=self.config.battery_max_discharge,
-                                    discharge_start=self.config.battery_min_discharge,
-                                    keepAlive=False)
-        self.set_wallbox_max_current(0,
-                                     max(self.config.wallbox_power_by_current.keys()))
-        self.set_battery_to_car_mode(False)
-
     def set_battery_to_car_mode(self, enabled: bool):
-        _ = self._e3dc.sendRequest(
-            ('EMS_REQ_SET_BATTERY_TO_CAR_MODE', "UChar8", 1 if enabled else 0),
-            keepAlive=True)
+        _ = self.send_request(
+            ('EMS_REQ_SET_BATTERY_TO_CAR_MODE', "UChar8", 1 if enabled else 0))
 
     def set_charge_idle(self, active: bool, end: array = [23, 59]) -> bool or None:
         if self._idle_active is active and self._idle_end == end:
             return None
-        try:
-            print(f"SETTING IDLE = {active} {end}")
-        except:
-            pass  # ignore exceptions on exception exit
         periods = []
         for day in range(7):
             data = [
@@ -416,124 +223,3 @@ class S10:
                              ("WB_INDEX", "UChar8", wb_index),
                              (request, "Container", param_1)
                          ])
-
-
-# functions
-
-
-def print_info(s10: S10, verbose: bool):
-    s10.print_all(verbose)
-    info = s10.get_info()
-    info.controls = Controls(-1, -1, -1)
-    print(one_line(info))
-
-
-def send_request(s10: S10, tag: str):
-    value = s10._e3dc.sendRequestTag(tag, keepAlive=True)
-    print(value)
-
-
-def no_teardown(s10):
-    pass
-
-
-# main
-
-
-def main(argv):
-    global final_action
-    final_action = no_teardown
-
-    loop_action = None
-    verbose = False
-    dry_run = False
-    num_loops = None  # infinite
-    wait = 1
-
-    try:
-        opts, _ = getopt.getopt(argv, "vdn:w:it:",
-                                ["verbose",
-                                 "dry-run",
-                                 "num-loops=",
-                                 "wait=",
-                                 "info",
-                                 "tag=",
-                                 "wb="])
-    except getopt.GetoptError:
-        print('main.py [--verbose] [--dry-run] [--num-loops=n] [--wait=seconds]',
-              '| [--info]',
-              '| [--tag=TAG]',
-              '| [--wb=index:value[:extern]]')
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt in ('-v', '--verbose'):
-            verbose = True
-        if opt in ('-d', '--dry-run'):
-            dry_run = True
-        if opt in ('-n', '--num-loops'):
-            num_loops = int(arg)
-        if opt in ('-w', '--wait'):
-            wait = float(arg)
-        if opt in ('-i', '--info'):
-            def loop_action(s10): print_info(s10, verbose)
-        if opt in ('-t', '--tag'):
-            def loop_action(s10): send_request(s10, tag=arg)
-            if num_loops is None:
-                num_loops = 1
-        if opt == '--wb':
-            def loop_action(s10):
-                data = arg.split(':')
-                set_extern = True if len(data) < 3 else data[2] != '0'
-                print(S10.send_wallbox_request(
-                    s10,
-                    0,
-                    int(data[0]),
-                    int(data[1]),
-                    set_extern))
-                for p in S10.get_wb(s10)[2][1:]:
-                    print(p)
-                for p, v in S10.get_wb_info(s10).items():
-                    print(p, v)
-            if num_loops is None:
-                num_loops = 1
-
-    if loop_action is None:
-        def loop_action(s10) -> bool:
-            with open(os.path.join(config_path, 'e3dc_directives.json'), 'r') as directives_file:
-                directives = directives_file.read()
-                directives = json.loads(directives)
-                directives = ControlDirectives(**directives)
-            if directives.loop == Loop.ExitWithTeardown.value:
-                return False
-            elif directives.loop == Loop.BreakWithoutTeardown.value:
-                print("breaking loop without teardown")
-                global final_action
-                final_action = no_teardown
-                return False
-            S10.update(s10, dry_run, directives.battery_charge)
-        if not dry_run:
-            final_action = S10.teardown
-
-    try:
-        s10 = None
-        loop = 0
-        while num_loops is None or loop < num_loops:
-            loop += 1
-            try:
-                if s10 is None:
-                    s10 = S10(CONFIG)
-                if loop_action(s10) is False:
-                    break
-                loop_wait = wait
-            except Exception as ex:
-                s10 = None
-                loop_wait = 5
-                print('ERROR:', ex)
-                traceback.print_exc()
-            if loop != num_loops:
-                time.sleep(loop_wait)
-    finally:
-        final_action(s10)
-
-
-main(sys.argv[1:])
