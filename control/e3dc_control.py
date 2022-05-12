@@ -1,6 +1,6 @@
 from charge_control import ChargeControl, ControlsSM
 from tools import MovingAverage
-from data import BatteryCharge, Config, ControlInfo, ControlState, Measurements
+from data import BatteryCharge, ChargeControlDirectives, Config, ControlInfo, ControlState, Measurements
 from e3dc_direct import E3dcDirect
 from print import one_line
 
@@ -56,7 +56,7 @@ class E3dcControl:
             control_state=ControlState.NotUpdated)
         return control_info
 
-    def update(self, e3dc: E3dcDirect, dry_run: bool, battery_charge: BatteryCharge or int):
+    def update(self, e3dc: E3dcDirect, dry_run: bool, directives: ChargeControlDirectives):
         if self._ignore_consumption_counter > 0:
             self._ignore_consumption_counter -= 1
         info = self.get_info(e3dc, self._ignore_consumption_counter > 0)
@@ -68,45 +68,53 @@ class E3dcControl:
                                             self.config.variation_margin)
 
         battery_to_car_mode = True
-        if info.car_connected:
-            local_time = info.measurements.utc \
-                + self.get_local_delta_hours(info.dt_utc)
-            if self.config.max_wallbox_start <= local_time \
-                    or local_time <= self.config.max_wallbox_end:
-                controls_0.wallbox_current \
-                    = controls_var.wallbox_current \
-                    = max(self.config.wallbox_power_by_current.keys())
-                battery_to_car_mode = False
-            elif controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
-                wb_on_minutes = (info.measurements.utc - self._wb_on_utc) * 60
-                if 0 < wb_on_minutes \
-                        and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
-                    controls_0.wallbox_current \
-                        = controls_var.wallbox_current \
-                        = min(self.config.wallbox_power_by_current.keys())
+        if not info.car_connected:
+            max_wallbox_current = 0
         else:
+            max_wallbox_current = directives.max_wallbox_current
+            if max_wallbox_current is None:
+                local_time = info.measurements.utc \
+                    + self.get_local_delta_hours(info.dt_utc)
+                if self.config.max_wallbox_start <= local_time \
+                        or local_time <= self.config.max_wallbox_end:
+                    max_wallbox_current \
+                        = max(self.config.wallbox_power_by_current.keys())
+                    battery_to_car_mode = False
+                elif controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
+                    wb_on_minutes = 60 * (info.measurements.utc
+                                          - self._wb_on_utc)
+                    if 0 < wb_on_minutes \
+                            and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
+                        max_wallbox_current \
+                            = min(self.config.wallbox_power_by_current.keys())
+            if directives.min_wallbox_current is not None:
+                value = controls_var.wallbox_current if max_wallbox_current is None else max_wallbox_current
+                if value < directives.min_wallbox_current:
+                    max_wallbox_current = directives.min_wallbox_current
+        if max_wallbox_current is not None:
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
-                = 0
+                = max_wallbox_current
 
         battery_max_charge_override = None
-        if type(battery_charge) == int:
-            battery_max_charge_override = int(battery_charge)
-        elif battery_charge == BatteryCharge.Suppressed.value:
+        if type(directives.battery_charge) == int:
+            battery_max_charge_override = int(directives.battery_charge)
+        elif directives.battery_charge == BatteryCharge.Suppressed.value:
             battery_max_charge_override = 0
-        elif battery_charge == BatteryCharge.Automatic.value:
+        elif directives.battery_charge == BatteryCharge.Automatic.value:
             pass
-        elif battery_charge == BatteryCharge.Default.value:
+        elif directives.battery_charge == BatteryCharge.Default.value:
             battery_max_charge_override = self.config.default_battery_max_charge
-        elif battery_charge == BatteryCharge.WallboxActive.value:
+        elif directives.battery_charge == BatteryCharge.WallboxActive.value:
             if info.measurements.wallbox > 0 \
                     or info.car_connected and controls_var.wallbox_current == 0 \
                     or info.measurements.soc == 100:
                 battery_max_charge_override = self.config.battery_max_charge
-        elif battery_charge == BatteryCharge.Full.value:
+        elif directives.battery_charge == BatteryCharge.Maximum.value:
             battery_max_charge_override = self.config.battery_max_charge
         else:
-            raise NotImplementedError(f"BatteryCharge value {battery_charge}")
+            raise NotImplementedError(
+                f"BatteryCharge value {directives.battery_charge}")
 
         if battery_max_charge_override is not None:
             controls_0.battery_max_charge \

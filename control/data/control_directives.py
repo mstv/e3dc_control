@@ -1,14 +1,6 @@
+from .charge_control_directives import ChargeControlDirectives
 from dataclasses import dataclass
 from enum import Enum, unique
-
-
-@unique
-class BatteryCharge(Enum):
-    Suppressed = 's'
-    Automatic = 'a'
-    Default = 'd'
-    WallboxActive = 'w'
-    Full = 'f'
 
 
 @unique
@@ -21,4 +13,4 @@ class Loop(Enum):
 @dataclass
 class ControlDirectives:
     loop: Loop or None
-    battery_charge: BatteryCharge or int
+    charge_control: ChargeControlDirectives

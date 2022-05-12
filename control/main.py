@@ -1,15 +1,15 @@
 from charge_control import CONFIG
-from data import ControlDirectives, Controls, ControlInfo, ControlState, Loop
+from data import ChargeControlDirectives, ControlDirectives, Controls, ControlInfo, ControlState, Loop
 from e3dc_control import E3dcControl
 from e3dc_direct import E3dcDirect
 from e3dc_factory import config_path, create_e3dc
 import getopt
-import json
 import os
 from print import one_line, readable, filter
 import sys
 import time
 import traceback
+import yaml
 
 
 # functions
@@ -186,10 +186,10 @@ def main(argv):
         control = E3dcControl(CONFIG)
 
         def loop_action(e3dc) -> bool:
-            with open(os.path.join(config_path, 'e3dc_directives.json'), 'r') as directives_file:
-                directives = directives_file.read()
-                directives = json.loads(directives)
-                directives = ControlDirectives(**directives)
+            with open(os.path.join(config_path, 'e3dc_directives.yaml'), 'r') as directives_file:
+                directives = yaml.safe_load(directives_file)
+            directives = ControlDirectives(**directives)
+            directives.charge_control = ChargeControlDirectives(**directives.charge_control)
             if directives.loop == Loop.ExitWithTeardown.value:
                 return False
             elif directives.loop == Loop.BreakWithoutTeardown.value:
@@ -197,7 +197,7 @@ def main(argv):
                 global final_action
                 final_action = no_teardown
                 return False
-            control.update(e3dc, dry_run, directives.battery_charge)
+            control.update(e3dc, dry_run, directives.charge_control)
 
         if not dry_run:
             final_action = control.teardown
