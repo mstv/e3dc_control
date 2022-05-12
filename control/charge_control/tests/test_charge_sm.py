@@ -67,7 +67,7 @@ def test_get_max_grid_denied_watthours(sm):
     assert sm._get_max_grid_denied_watthours(max_utc) == 0
 
     sm._update_solar_parabola(utc=None, solar=0)  # reset
-    sm._update_solar_parabola(peak_utc - 3.5, solar=sm.config.grid_max // 2)
+    sm._update_solar_parabola(peak_utc - 2.25, solar=sm.config.grid_max)
     sm._update_solar_parabola(before_peak_utc, solar=sm.config.grid_max + 1800)
     no_grid_denied_utc = peak_utc + 2.25
     between_utc = (peak_utc + no_grid_denied_utc) / 2
