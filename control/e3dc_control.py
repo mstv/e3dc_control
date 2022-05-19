@@ -77,7 +77,7 @@ class E3dcControl:
                     = controls_var.wallbox_current \
                     = max(self.config.wallbox_power_by_current.keys())
                 battery_to_car_mode = False
-            if controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
+            elif controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
                 wb_on_minutes = (info.measurements.utc - self._wb_on_utc) * 60
                 if 0 < wb_on_minutes \
                         and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
@@ -149,8 +149,7 @@ class E3dcControl:
             if info.car_may_charge != may_charge:
                 e3dc.toggle_wallbox_charging()
                 e3dc.set_battery_to_car_mode(battery_to_car_mode)
-                if may_charge:
-                    self._wb_on_utc = info.measurements.utc
+                self._wb_on_utc = info.measurements.utc if may_charge else None
 
     def teardown(self, e3dc: E3dcDirect):
         e3dc.set_charge_idle(self.config.default_idle_charge_active,
