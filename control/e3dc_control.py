@@ -80,7 +80,10 @@ class E3dcControl:
                     max_wallbox_current \
                         = max(self.config.wallbox_power_by_current.keys())
                     battery_to_car_mode = False
-                elif controls_var.wallbox_current == 0 and self._wb_on_utc is not None:
+                elif controls_var.wallbox_current > 0:
+                    if info.car_charging:
+                        self._wb_on_utc = info.measurements.utc
+                elif self._wb_on_utc is not None:
                     wb_on_minutes = 60 * (info.measurements.utc
                                           - self._wb_on_utc)
                     if 0 < wb_on_minutes \
