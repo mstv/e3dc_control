@@ -1,0 +1,14 @@
+# loop: first letter of value or empty (for run)
+# run, break without teardown, exit with teardown
+loop:
+
+charge_control:
+  # battery_charge: first letter of value or int (in Watts)
+  # suppressed, automatic, default, wallbox active, maximum
+  battery_charge: a
+
+  # max_wallbox_current: int (in Amperes) or empty (for sun mode and night rate)
+  max_wallbox_current:
+
+  # min_wallbox_current (applies to sun mode only): int (in Amperes) or empty
+  min_wallbox_current:
