@@ -1,4 +1,4 @@
-from charge_control import CONFIG
+from _config import CONFIG
 from data import ChargeControlDirectives, ControlDirectives, Controls, ControlInfo, ControlState, Loop
 from e3dc_control import E3dcControl
 from e3dc_direct import E3dcDirect

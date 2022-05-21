@@ -1,5 +1,5 @@
 from ..charge_control import limit, ChargeControl
-from ..config import CONFIG
+from _config import CONFIG
 from data import Config, Measurements, Controls
 import pytest
 

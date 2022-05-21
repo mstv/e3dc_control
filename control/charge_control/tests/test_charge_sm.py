@@ -1,5 +1,5 @@
 from ..charge_sm import ChargeSM
-from ..config import CONFIG
+from _config import CONFIG
 from data import Config, Measurements, Controls
 import pytest
 
