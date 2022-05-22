@@ -29,11 +29,12 @@ class Tester:
         assert controls.battery_max_discharge is None
         assert controls.battery_max_charge == expected
 
-    def update(self, solar, house, wallbox, variation_margin=0) -> Controls:
+    def update(self, solar, house, wallbox, variation_margin=0, battery_to_car=0) -> Controls:
         soc = 0
         utc = 0.0
         return self._charge_control.update(Measurements(solar, house, wallbox, soc, utc),
-                                           variation_margin)
+                                           variation_margin,
+                                           battery_to_car)
 
     def assert_battery_max_charge(self, solar, house, wallbox, variation_margin, expected):
         soc = 0
@@ -81,21 +82,25 @@ def test_limit():
 
 def test_update_wallbox_current(t):
     for wallbox_power in (0, 1000, 5000, 11000, 22000):  # no influence
-        for variation_margin in (0, 100, 300, 100):
-            wallbox_current = max(t.config.wallbox_power_by_current.keys())
-            solar = t.config.solar_max
-            house = solar \
-                - t.config.wallbox_power_by_current[wallbox_current] \
-                - variation_margin
+        for variation_margin in (0, 100, 300, 1000):
+            for battery_to_car in (0, 4500):
+                wallbox_current = max(t.config.wallbox_power_by_current.keys())
+                solar = t.config.solar_max
+                house = solar \
+                    - t.config.wallbox_power_by_current[wallbox_current] \
+                    - variation_margin \
+                    + battery_to_car
 
-            c = t.update(solar, house, wallbox_power, variation_margin)
-            assert c.wallbox_current == wallbox_current
-            assert c.battery_max_discharge == t.config.battery_max_discharge
+                c = t.update(solar, house, wallbox_power,
+                             variation_margin, battery_to_car)
+                assert c.wallbox_current == wallbox_current
+                assert c.battery_max_discharge == t.config.battery_max_discharge
 
-            solar -= 1
-            c = t.update(solar, house, wallbox_power, variation_margin)
-            assert c.wallbox_current == wallbox_current - 1
-            assert c.battery_max_discharge == t.config.battery_max_discharge
+                solar -= 1
+                c = t.update(solar, house, wallbox_power,
+                             variation_margin, battery_to_car)
+                assert c.wallbox_current == wallbox_current - 1
+                assert c.battery_max_discharge == t.config.battery_max_discharge
 
 
 def test_update_grid_max(t):

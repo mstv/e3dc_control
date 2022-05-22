@@ -16,3 +16,4 @@ class ChargeControlDirectives:
     battery_charge: BatteryCharge or int
     max_wallbox_current: int or None
     min_wallbox_current: int or None
+    battery_to_car_until_soc: int or None

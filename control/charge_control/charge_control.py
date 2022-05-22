@@ -36,10 +36,10 @@ class ChargeControl:
                                                self.config.battery_max_discharge)
         return controls
 
-    def update(self, measurements: Measurements, variation_margin: int) -> Controls:
+    def update(self, measurements: Measurements, variation_margin: int, battery_to_car: int) -> Controls:
         controls = Controls(
             wallbox_current=self._get_wallbox_current(measurements,
-                                                      variation_margin),
+                                                      variation_margin - battery_to_car),
             battery_max_discharge=self.config.battery_max_discharge,
             battery_max_charge=self._charge_sm.update(measurements,
                                                       variation_margin))

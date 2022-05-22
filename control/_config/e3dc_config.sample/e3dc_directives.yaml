@@ -12,3 +12,6 @@ charge_control:
 
   # min_wallbox_current (applies to sun mode only): int (in Amperes) or empty
   min_wallbox_current:
+
+  # battery_to_car_until_soc: int (minimum battery state of charge in %) or empty
+  battery_to_car_until_soc: 40
