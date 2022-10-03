@@ -50,6 +50,7 @@ class E3dcControl:
             car_soc=info.car_soc,
             car_total=info.car_total,
             car_grid=info.car_grid,
+            battery_to_car=info.battery_to_car,
             averaged=averaged,
             max_solar=self._control._charge_sm._max_solar,
             controls=None,

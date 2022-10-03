@@ -5,7 +5,7 @@ from json import dumps
 def one_line(info: ControlInfo) -> str:
     wb_max = max(0, info.measurements.solar - info.measurements.house)
     wb_delta = wb_max - info.measurements.wallbox
-    wb_status = '>' if info.car_charging else '-' if info.car_connected else '!'
+    wb_status = (('>' if info.battery_to_car else '≈') if info.car_charging else '-') if info.car_connected else '!'
     solar_status = '!' if (info.status & Status.PvAlive) != Status.PvAlive \
         else ':' if (info.status & Status.PvDerated) != 0 \
         else '<'

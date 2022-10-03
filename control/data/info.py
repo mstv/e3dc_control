@@ -33,3 +33,4 @@ class Info:
     car_soc: int
     car_total: int
     car_grid: int
+    battery_to_car: bool

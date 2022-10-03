@@ -73,6 +73,7 @@ class E3dcDirect:
         solar_delta = int(self.get_solar_power(0, 0)
                           - self.get_solar_power(0, 1))
         status = self.get("EMS_REQ_SYS_STATUS")
+        battery_to_car = self.get('EMS_REQ_BATTERY_TO_CAR_MODE')
 
         wb = self.get_wb_info()
         wb_status = wb['status']
@@ -91,7 +92,8 @@ class E3dcDirect:
                     car_max_current=wb_status['max A'],
                     car_soc=wb_solar[2],
                     car_total=wb_solar[5],
-                    car_grid=wb['grid'][0])
+                    car_grid=wb['grid'][0],
+                    battery_to_car=battery_to_car)
         return info
 
     def get_solar_power(self, pvi_index: int, pv_string_index: int) -> float:

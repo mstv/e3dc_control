@@ -80,9 +80,6 @@ def print_all(e3dc: E3dcDirect, verbose: bool):
     # print(readable(pmData))
     # print(readable(pmsData))
 
-    print('EMS_BATTERY_TO_CAR_MODE:',
-          e3dc.get('EMS_REQ_BATTERY_TO_CAR_MODE'))
-
     for p, v in e3dc.get_wb_info().items():
         print(p, v)
 
@@ -107,10 +104,13 @@ def print_info(e3dc: E3dcDirect, verbose: bool):
         car_soc=info.car_soc,
         car_total=info.car_total,
         car_grid=info.car_grid,
+        battery_to_car=info.battery_to_car,
         averaged=info.measurements,
         max_solar=-1,
         controls=Controls(-1, -1, -1),
         control_state=ControlState.NotUpdated)
+    if verbose:
+        print('battery_to_car', control_info.battery_to_car)
     print(one_line(control_info))
 
 
