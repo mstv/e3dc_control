@@ -68,7 +68,11 @@ def print_all(e3dc: E3dcDirect, verbose: bool):
         # set_idle_periods
 
         print('get_db_data (total sums)')
-        print(readable(e3dc.get_db_data()))
+        db_data = e3dc.get_db_data()
+        start_date_id = 'startDate'
+        start_date = str(db_data.pop(start_date_id))
+        db_data[start_date_id] = start_date
+        print(readable(db_data))
 
         print('get_battery_data')
         print(readable(e3dc.get_battery_data()))
