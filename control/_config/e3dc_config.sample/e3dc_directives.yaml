@@ -3,6 +3,10 @@
 loop:
 
 charge_control:
+  # battery_min_soc: int (in %)
+  # always solar-charge the battery at least to this limit - regardless of battery_charge mode
+  battery_min_soc: 20
+
   # battery_charge: first letter of value or int (in Watts)
   # suppressed, automatic, default, wallbox active, maximum
   battery_charge: a

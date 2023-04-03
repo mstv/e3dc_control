@@ -13,6 +13,7 @@ class BatteryCharge(Enum):
 
 @dataclass
 class ChargeControlDirectives:
+    battery_min_soc: int
     battery_charge: BatteryCharge or int
     max_wallbox_current: int or None
     min_wallbox_current: int or None

@@ -112,7 +112,9 @@ class E3dcControl:
                 = max_wallbox_current
 
         battery_max_charge_override = None
-        if type(directives.battery_charge) == int:
+        if info.measurements.soc < directives.battery_min_soc:
+            battery_max_charge_override = self.config.battery_max_charge
+        elif type(directives.battery_charge) == int:
             battery_max_charge_override = int(directives.battery_charge)
         elif directives.battery_charge == BatteryCharge.Suppressed.value:
             battery_max_charge_override = 0
