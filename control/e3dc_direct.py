@@ -2,6 +2,7 @@ from array import array
 from data import Info, Measurements
 from datetime import datetime
 from e3dc import E3DC
+import traceback
 
 
 class E3dcDirect:
@@ -121,48 +122,68 @@ class E3dcDirect:
                          ])
 
     def get_wb_info(self, wb_index: int = 0) -> object:
-        response = self.get_wb(wb_index)[2][1:]
-        alg = response[0][2][1][2]
-        sun = response[1][2][1][2]
-        net = response[2][2][1][2]
-        key = response[3][2]
-        sun_w0_power = (int(sun[1]) << 8) | int(sun[0])
-        sun_w12_total = (int(sun[5]) << 24) | (int(sun[4]) << 16) \
-            | (int(sun[3]) << 8) | int(sun[2])
-        sun_w3_soc = (int(sun[7]) << 8) | int(sun[6])
-        net_w0_power = (int(net[1]) << 8) | int(net[0])
-        net_w12_total = (int(net[5]) << 24) | (int(net[4]) << 16) \
-            | (int(net[3]) << 8) | int(net[2])
-        net_w3 = (int(net[7]) << 8) | int(net[6])
-        alg0_soc = alg[0]
-        alg1_phases = alg[1]
-        alg2_status = alg[2]
-        alg3_max = alg[3]
-        alg5_schuko = alg[5]
+        response = None
+        try:
+            response = self.get_wb(wb_index)[2][1:]
+            if response[0][2] != 'RSCP_ERR_NOT_AVAILABLE':
+                alg = response[0][2][1][2]
+                sun = response[1][2][1][2]
+                net = response[2][2][1][2]
+                key = response[3][2]
+                sun_w0_power = (int(sun[1]) << 8) | int(sun[0])
+                sun_w12_total = (int(sun[5]) << 24) | (int(sun[4]) << 16) \
+                    | (int(sun[3]) << 8) | int(sun[2])
+                sun_w3_soc = (int(sun[7]) << 8) | int(sun[6])
+                net_w0_power = (int(net[1]) << 8) | int(net[0])
+                net_w12_total = (int(net[5]) << 24) | (int(net[4]) << 16) \
+                    | (int(net[3]) << 8) | int(net[2])
+                net_w3 = (int(net[7]) << 8) | int(net[6])
+                alg0_soc = alg[0]
+                alg1_phases = alg[1]
+                alg2_status = alg[2]
+                alg3_max = alg[3]
+                alg5_schuko = alg[5]
+                status = {
+                    'sun mode': (alg2_status & 128) != 0,
+                    'canceled': (alg2_status & 64) != 0,
+                    'charging': (alg2_status & 32) != 0,
+                    'locked': (alg2_status & 16) != 0,
+                    'plugged': (alg2_status & 8) != 0,
+                    'max A': alg3_max,
+                    'key': key,
+                }
+                info = {
+                    'solar': [sun_w12_total, sun_w0_power, sun_w3_soc, '% of 10kWh',
+                            'total', sun_w12_total + net_w12_total],
+                    'grid': [net_w12_total, net_w0_power, net_w3],
+                    'status': status,
+                }
+                others = (alg2_status & 7, alg[4], alg[6], alg[7])
+                if others != (0, 0, 0, 0):
+                    status['alg[o467]'] = others
+                if alg1_phases != 3:
+                    status['phases'] = alg1_phases
+                if alg5_schuko != 0:
+                    status['schuko'] = alg5_schuko
+                if alg0_soc != sun_w3_soc:
+                    info['solar'][3] += f" but {alg0_soc} in ALG[0]!"
+                return info
+        except Exception as ex:
+            print(f"{str.join('', traceback.format_exception(ex))}for e3dc response: {response}")
         status = {
-            'sun mode': (alg2_status & 128) != 0,
-            'canceled': (alg2_status & 64) != 0,
-            'charging': (alg2_status & 32) != 0,
-            'locked': (alg2_status & 16) != 0,
-            'plugged': (alg2_status & 8) != 0,
-            'max A': alg3_max,
-            'key': key,
+            'sun mode': False,
+            'canceled': True,
+            'charging': False,
+            'locked': False,
+            'plugged': False,
+            'max A': 0,
+            'key': None,
         }
         info = {
-            'solar': [sun_w12_total, sun_w0_power, sun_w3_soc, '% of 10kWh',
-                      'total', sun_w12_total + net_w12_total],
-            'grid': [net_w12_total, net_w0_power, net_w3],
+            'solar': [0, 0, 0, '% of 10kWh', 'total', 0],
+            'grid': [0, 0, 0],
             'status': status,
         }
-        others = (alg2_status & 7, alg[4], alg[6], alg[7])
-        if others != (0, 0, 0, 0):
-            status['alg[o467]'] = others
-        if alg1_phases != 3:
-            status['phases'] = alg1_phases
-        if alg5_schuko != 0:
-            status['schuko'] = alg5_schuko
-        if alg0_soc != sun_w3_soc:
-            info['solar'][3] += f" but {alg0_soc} in ALG[0]!"
         return info
 
     def set_battery_to_car_mode(self, enabled: bool):
