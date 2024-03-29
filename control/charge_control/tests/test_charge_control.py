@@ -1,4 +1,4 @@
-from ..charge_control import limit, ChargeControl
+from ..charge_control import limit, ChargeControl, lookup_below
 from _config import CONFIG
 from data import Config, Measurements, Controls
 import pytest
@@ -32,9 +32,11 @@ class Tester:
     def update(self, solar, house, wallbox, variation_margin=0, battery_to_car=0) -> Controls:
         soc = 0
         utc = 0.0
+        lookup_current = lambda power: lookup_below(power, self.config.wallbox_power_by_current)
         return self._charge_control.update(Measurements(solar, house, wallbox, soc, utc),
                                            variation_margin,
-                                           battery_to_car)
+                                           battery_to_car,
+                                           lookup_current)
 
     def assert_battery_max_charge(self, solar, house, wallbox, variation_margin, expected):
         soc = 0

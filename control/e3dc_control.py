@@ -1,4 +1,4 @@
-from charge_control import ChargeControl, ControlsSM
+from charge_control import ChargeControl, ControlsSM, lookup_below, lookup_above
 from tools import MovingAverage
 from data import BatteryCharge, ChargeControlDirectives, Config, ControlInfo, ControlState, Measurements
 from e3dc_direct import E3dcDirect
@@ -67,18 +67,27 @@ class E3dcControl:
             and info.measurements.soc > directives.battery_to_car_until_soc
         battery_to_car_budget = self.config.battery_max_discharge if battery_to_car_budget_available else 0
 
+        if directives.all_solar_excess_to_car:
+            variation_margin = -self.config.variation_margin
+            lookup_current = lambda power: lookup_above(power, self.config.wallbox_power_by_current)
+        else:
+            variation_margin = self.config.variation_margin
+            lookup_current = lambda power: lookup_below(power, self.config.wallbox_power_by_current)
+
         # calculate
         controls_0 = self._control.update(info.averaged,
                                           variation_margin=0,
-                                          battery_to_car=battery_to_car_budget)
+                                          battery_to_car=battery_to_car_budget,
+                                          lookup_current=lookup_current)
         controls_var = self._control.update(info.averaged,
-                                            self.config.variation_margin,
-                                            battery_to_car_budget)
+                                            variation_margin,
+                                            battery_to_car_budget,
+                                            lookup_current)
 
         if not info.car_connected:
             max_wallbox_current = 0
         else:
-            max_wallbox_current = directives.max_wallbox_current
+            max_wallbox_current = directives.max_wallbox_current_override
             if max_wallbox_current is None:
                 local_time = info.measurements.utc \
                     + self.get_local_delta_hours(info.dt_utc)
@@ -87,7 +96,8 @@ class E3dcControl:
                     max_wallbox_current \
                         = max(self.config.wallbox_power_by_current.keys())
                 elif controls_var.wallbox_current > 0:
-                    if info.car_charging:
+                    # stop wallbox charging only if 0 for entire hold time unless all from grid
+                    if info.car_charging and not directives.all_solar_excess_to_car:
                         self._wb_on_utc = info.measurements.utc
                 elif self._wb_on_utc is not None:
                     wb_on_minutes = 60 * (info.measurements.utc
@@ -97,14 +107,15 @@ class E3dcControl:
                         max_wallbox_current \
                             = min(self.config.wallbox_power_by_current.keys())
                         if directives.battery_to_car_until_soc is None:
-                            battery_to_car_budget_available = True  # use the battery during hold time
+                            # use the battery during hold time unless all to car
+                            battery_to_car_budget_available = not directives.all_solar_excess_to_car
             if directives.min_wallbox_current is not None:
                 value = controls_var.wallbox_current if max_wallbox_current is None else max_wallbox_current
                 if value < directives.min_wallbox_current:
                     max_wallbox_current = directives.min_wallbox_current
         if max_wallbox_current is None:
             # by default use the battery instead of the grid while readjusting to production and consumption
-            battery_to_car_mode = True
+            battery_to_car_mode = not directives.all_solar_excess_to_car
         else:
             battery_to_car_mode = battery_to_car_budget_available
             controls_0.wallbox_current \
