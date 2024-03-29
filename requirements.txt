@@ -1,3 +1,5 @@
-pye3dc>=0.7.3
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+pye3dc>=0.9.1
 pytz>=2022.1
 PyYAML>=6.0
