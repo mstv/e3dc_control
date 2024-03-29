@@ -156,7 +156,7 @@ class E3dcControl:
             return
         if any_changed:
             # ignore misleading drop/peak in house consumption
-            self._ignore_consumption_counter = 4
+            self._ignore_consumption_counter = 10 if changed.wallbox_current else 4
         if changed.battery_max_charge or changed.battery_max_discharge:
             assert info.controls.battery_max_discharge == self.config.battery_max_discharge
             if info.controls.battery_max_charge == 0:
