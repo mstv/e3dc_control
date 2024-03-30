@@ -12,11 +12,20 @@ def limit(value, min_positive, max):
     return value
 
 
-def _lookup(max_power: int, power_by_current: dict) -> int:
+def lookup_below(max_power: int, power_by_current: dict) -> int:
     for current, power in power_by_current.items():
         if max_power >= power:
             return current
     return 0
+
+
+def lookup_above(min_power: int, power_by_current: dict) -> int:
+    if min_power <= 0:
+        return 0
+    for current, power in reversed(power_by_current.items()):
+        if min_power <= power:
+            return current
+    return max(power_by_current.keys())
 
 
 class ChargeControl:
@@ -57,4 +66,4 @@ class ChargeControl:
     def _get_wallbox_current(self, measurements: Measurements, variation_margin: int) -> int:
         max_wallbox = measurements.solar \
             - (measurements.house + variation_margin)
-        return _lookup(max_wallbox, self.config.wallbox_power_by_current)
+        return lookup_below(max_wallbox, self.config.wallbox_power_by_current)
