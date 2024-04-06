@@ -88,7 +88,9 @@ class E3dcControl:
             max_wallbox_current = 0
         else:
             max_wallbox_current = directives.max_wallbox_current_override
-            if max_wallbox_current is None:
+            if max_wallbox_current == 0:
+                self._wb_on_utc = None
+            elif max_wallbox_current is None:
                 local_time = info.measurements.utc \
                     + self.get_local_delta_hours(info.dt_utc)
                 if self.config.max_wallbox_start <= local_time \
