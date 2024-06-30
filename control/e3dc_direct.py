@@ -1,5 +1,5 @@
 from array import array
-from data import Info, Measurements
+from data import Info, Measurements, Status
 from datetime import datetime
 from e3dc import E3DC
 import traceback
@@ -79,7 +79,7 @@ class E3dcDirect:
         wb = self.get_wb_info()
         wb_status = wb['status']
         wb_solar = wb['solar']
-        car_connected = wb_status['plugged'] and wb_status['locked']
+        car_connected = None if (status & Status.WallBoxAlive) == 0 else wb_status['plugged'] and wb_status['locked']
         car_may_charge = not wb_status['canceled'] and car_connected
         info = Info(dt_utc=datetime.utcfromtimestamp(utime),
                     measurements=measurements,

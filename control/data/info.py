@@ -13,6 +13,7 @@ class Status(IntFlag):
     PvInverterInited = 1 << 4
     ServerConnectionAlive = 1 << 5
     PvDerated = 1 << 6
+    WallBoxAlive = 1 << 14
 
     PvAlive = DcDcAlive | PowerMeterAlive | BatteryModuleAlive \
         | PvModuleAlive | PvInverterInited
