@@ -14,5 +14,8 @@ class BatteryCharge(Enum):
 @dataclass
 class ChargeControlDirectives:
     battery_charge: BatteryCharge or int
-    max_wallbox_current: int or None
+    battery_min_soc: int
+    battery_to_car_until_soc: int or None
+    all_solar_excess_to_car: bool
+    max_wallbox_current_override: int or None
     min_wallbox_current: int or None

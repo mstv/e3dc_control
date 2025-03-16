@@ -68,7 +68,11 @@ def print_all(e3dc: E3dcDirect, verbose: bool):
         # set_idle_periods
 
         print('get_db_data (total sums)')
-        print(readable(e3dc.get_db_data()))
+        db_data = e3dc.get_db_data()
+        start_date_id = 'startDate'
+        start_date = str(db_data.pop(start_date_id))
+        db_data[start_date_id] = start_date
+        print(readable(db_data))
 
         print('get_battery_data')
         print(readable(e3dc.get_battery_data()))
@@ -79,9 +83,6 @@ def print_all(e3dc: E3dcDirect, verbose: bool):
     # pmsData = e3dc._e3dc.get_powermeters_data(keepAlive=True)
     # print(readable(pmData))
     # print(readable(pmsData))
-
-    print('EMS_BATTERY_TO_CAR_MODE:',
-          e3dc.get('EMS_REQ_BATTERY_TO_CAR_MODE'))
 
     for p, v in e3dc.get_wb_info().items():
         print(p, v)
@@ -107,10 +108,13 @@ def print_info(e3dc: E3dcDirect, verbose: bool):
         car_soc=info.car_soc,
         car_total=info.car_total,
         car_grid=info.car_grid,
+        battery_to_car=info.battery_to_car,
         averaged=info.measurements,
         max_solar=-1,
         controls=Controls(-1, -1, -1),
         control_state=ControlState.NotUpdated)
+    if verbose:
+        print('battery_to_car', control_info.battery_to_car)
     print(one_line(control_info))
 
 

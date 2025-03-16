@@ -50,17 +50,19 @@ class ChargeSM:
             return None  # future grid_denied integral cannot be estimated yet
         hours_after_peak_end = utc - self.config.solar_peak_end_utc  # right side of parabola
         hours_before_peak_end = -hours_after_peak_end  # plateau
-        max_grid_denied = self._max_solar - self.config.grid_max
+        max_solar = min(self._max_solar,
+                        self.config.grid_max + self.config.battery_max_charge)
+        max_grid_denied = max_solar - self.config.grid_max
         if max_grid_denied <= 0 or self._grid_max_utc is None:
             return 0
         # s(t) = a * (t - t_peak) ^ 2 + s_peak
-        # with a < 0 and s_peak approximated using self._max_solar
+        # with a < 0 and s_peak approximated using self._max_solar (limited by grid_max + battery_max_charge)
         #      s(t) - s_peak
         # a = ----------------
         #     (t - t_peak) ^ 2
         # (t - t_peak) = sqrt( (s(t) - s_peak) / a )
         # Integral (a * x ^ 2 + b) dx = a / 3 * x ^ 3 + b * x + constant
-        a = (self.config.grid_max - self._max_solar) \
+        a = (self.config.grid_max - max_solar) \
             / pow(self._grid_max_utc - self.config.solar_peak_start_utc, 2)
         stop_hours_after_peak_end = sqrt(-max_grid_denied / a)
         if hours_after_peak_end >= stop_hours_after_peak_end:

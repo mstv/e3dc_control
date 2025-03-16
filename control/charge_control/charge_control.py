@@ -1,4 +1,5 @@
 from data import Config, Controls, Measurements
+from typing import Callable
 from .charge_sm import ChargeSM
 
 
@@ -12,11 +13,26 @@ def limit(value, min_positive, max):
     return value
 
 
-def _lookup(max_power: int, power_by_current: dict) -> int:
+def lookup_below(max_power: int, power_by_current: dict) -> int:
     for current, power in power_by_current.items():
         if max_power >= power:
             return current
     return 0
+
+
+def lookup_above(min_power: int, power_by_current: dict) -> int:
+    if min_power <= 0:
+        return 0
+    for current, power in reversed(power_by_current.items()):
+        if min_power <= power:
+            return current
+    return max(power_by_current.keys())
+
+
+def _get_wallbox_current(measurements: Measurements, variation_margin: int, lookup: Callable[[int], int]) -> int:
+    max_wallbox = measurements.solar \
+        - (measurements.house + variation_margin)
+    return lookup(max_wallbox)
 
 
 class ChargeControl:
@@ -36,10 +52,11 @@ class ChargeControl:
                                                self.config.battery_max_discharge)
         return controls
 
-    def update(self, measurements: Measurements, variation_margin: int) -> Controls:
+    def update(self, measurements: Measurements, variation_margin: int, battery_to_car: int, lookup_current: Callable[[int], int]) -> Controls:
         controls = Controls(
-            wallbox_current=self._get_wallbox_current(measurements,
-                                                      variation_margin),
+            wallbox_current=_get_wallbox_current(measurements,
+                                                 variation_margin - battery_to_car,
+                                                 lookup_current),
             battery_max_discharge=self.config.battery_max_discharge,
             battery_max_charge=self._charge_sm.update(measurements,
                                                       variation_margin))
@@ -53,8 +70,3 @@ class ChargeControl:
                                 * controls.battery_max_charge),
                         0, self.config.battery_max_charge)
         return controls
-
-    def _get_wallbox_current(self, measurements: Measurements, variation_margin: int) -> int:
-        max_wallbox = measurements.solar \
-            - (measurements.house + variation_margin)
-        return _lookup(max_wallbox, self.config.wallbox_power_by_current)

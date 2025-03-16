@@ -1,4 +1,4 @@
-from charge_control import ChargeControl, ControlsSM
+from charge_control import ChargeControl, ControlsSM, lookup_below, lookup_above
 from tools import MovingAverage
 from data import BatteryCharge, ChargeControlDirectives, Config, ControlInfo, ControlState, Measurements
 from e3dc_direct import E3dcDirect
@@ -50,6 +50,7 @@ class E3dcControl:
             car_soc=info.car_soc,
             car_total=info.car_total,
             car_grid=info.car_grid,
+            battery_to_car=info.battery_to_car,
             averaged=averaged,
             max_solar=self._control._charge_sm._max_solar,
             controls=None,
@@ -61,27 +62,44 @@ class E3dcControl:
             self._ignore_consumption_counter -= 1
         info = self.get_info(e3dc, self._ignore_consumption_counter > 0)
 
+        battery_to_car_budget_available \
+            = directives.battery_to_car_until_soc is not None \
+            and info.measurements.soc > directives.battery_to_car_until_soc
+        battery_to_car_budget = self.config.battery_max_discharge if battery_to_car_budget_available else 0
+
+        if directives.all_solar_excess_to_car:
+            variation_margin = -self.config.variation_margin
+            lookup_current = lambda power: lookup_above(power, self.config.wallbox_power_by_current)
+        else:
+            variation_margin = self.config.variation_margin
+            lookup_current = lambda power: lookup_below(power, self.config.wallbox_power_by_current)
+
         # calculate
         controls_0 = self._control.update(info.averaged,
-                                          variation_margin=0)
+                                          variation_margin=0,
+                                          battery_to_car=battery_to_car_budget,
+                                          lookup_current=lookup_current)
         controls_var = self._control.update(info.averaged,
-                                            self.config.variation_margin)
+                                            variation_margin,
+                                            battery_to_car_budget,
+                                            lookup_current)
 
-        battery_to_car_mode = True
         if not info.car_connected:
             max_wallbox_current = 0
         else:
-            max_wallbox_current = directives.max_wallbox_current
-            if max_wallbox_current is None:
+            max_wallbox_current = directives.max_wallbox_current_override
+            if max_wallbox_current == 0:
+                self._wb_on_utc = None
+            elif max_wallbox_current is None:
                 local_time = info.measurements.utc \
                     + self.get_local_delta_hours(info.dt_utc)
                 if self.config.max_wallbox_start <= local_time \
                         or local_time <= self.config.max_wallbox_end:
                     max_wallbox_current \
                         = max(self.config.wallbox_power_by_current.keys())
-                    battery_to_car_mode = False
                 elif controls_var.wallbox_current > 0:
-                    if info.car_charging:
+                    # stop wallbox charging only if 0 for entire hold time unless all from grid
+                    if info.car_charging and not directives.all_solar_excess_to_car:
                         self._wb_on_utc = info.measurements.utc
                 elif self._wb_on_utc is not None:
                     wb_on_minutes = 60 * (info.measurements.utc
@@ -90,17 +108,26 @@ class E3dcControl:
                             and wb_on_minutes < self.config.wallbox_min_current_hold_minutes:
                         max_wallbox_current \
                             = min(self.config.wallbox_power_by_current.keys())
+                        if directives.battery_to_car_until_soc is None:
+                            # use the battery during hold time unless all to car
+                            battery_to_car_budget_available = not directives.all_solar_excess_to_car
             if directives.min_wallbox_current is not None:
                 value = controls_var.wallbox_current if max_wallbox_current is None else max_wallbox_current
                 if value < directives.min_wallbox_current:
                     max_wallbox_current = directives.min_wallbox_current
-        if max_wallbox_current is not None:
+        if max_wallbox_current is None:
+            # by default use the battery instead of the grid while readjusting to production and consumption
+            battery_to_car_mode = not directives.all_solar_excess_to_car
+        else:
+            battery_to_car_mode = battery_to_car_budget_available
             controls_0.wallbox_current \
                 = controls_var.wallbox_current \
                 = max_wallbox_current
 
         battery_max_charge_override = None
-        if type(directives.battery_charge) == int:
+        if info.measurements.soc < directives.battery_min_soc:
+            battery_max_charge_override = self.config.battery_max_charge
+        elif type(directives.battery_charge) == int:
             battery_max_charge_override = int(directives.battery_charge)
         elif directives.battery_charge == BatteryCharge.Suppressed.value:
             battery_max_charge_override = 0
@@ -142,7 +169,7 @@ class E3dcControl:
             return
         if any_changed:
             # ignore misleading drop/peak in house consumption
-            self._ignore_consumption_counter = 4
+            self._ignore_consumption_counter = 10 if changed.wallbox_current else 4
         if changed.battery_max_charge or changed.battery_max_discharge:
             assert info.controls.battery_max_discharge == self.config.battery_max_discharge
             if info.controls.battery_max_charge == 0:
@@ -159,8 +186,9 @@ class E3dcControl:
                 e3dc.set_wallbox_max_current(0, info.controls.wallbox_current)
             if info.car_may_charge != may_charge:
                 e3dc.toggle_wallbox_charging()
-                e3dc.set_battery_to_car_mode(battery_to_car_mode)
                 self._wb_on_utc = info.measurements.utc if may_charge else None
+        if info.battery_to_car != battery_to_car_mode:
+            e3dc.set_battery_to_car_mode(battery_to_car_mode)
 
     def teardown(self, e3dc: E3dcDirect):
         e3dc.set_charge_idle(self.config.default_idle_charge_active,

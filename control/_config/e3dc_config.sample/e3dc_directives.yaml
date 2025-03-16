@@ -7,8 +7,18 @@ charge_control:
   # suppressed, automatic, default, wallbox active, maximum
   battery_charge: a
 
-  # max_wallbox_current: int (in Amperes) or empty (for sun mode and night rate)
-  max_wallbox_current:
+  # battery_min_soc: int (in %)
+  # always solar-charge the battery at least to this limit - regardless of battery_charge mode
+  battery_min_soc: 20
 
-  # min_wallbox_current (applies to sun mode only): int (in Amperes) or empty
+  # battery_to_car_until_soc: int (minimum battery state of charge in %) or empty
+  battery_to_car_until_soc: 40
+
+  # all_solar_excess_to_car: bool or empty (avoid charging the battery, partially charges the car from grid)
+  all_solar_excess_to_car:
+
+  # max_wallbox_current_override: int (in Amperes) or empty (forced value for sun mode and night rate)
+  max_wallbox_current_override:
+
+  # min_wallbox_current: int (in Amperes) or empty
   min_wallbox_current:
